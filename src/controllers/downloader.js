@@ -2,6 +2,10 @@ const { spawn } = require('child_process');
 const path = require('path');
 const ytdl = require('ytdl-core');
 const Cache = require('../models/cache');
+const fs = require('fs');
+
+const CACHE_DIR = path.join(__dirname, '../../cache');
+if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR);
 
 class DownloaderController {
     // Use correct yt-dlp binary for platform
@@ -81,12 +85,12 @@ class DownloaderController {
                 }
             }
         }
-        // Check cache first
+        // Check cache in MongoDB and on disk (serve from cache if available)
         const cacheHit = await Cache.findOne({ videoId, type: 'video', quality });
-        if (cacheHit && cacheHit.data) {
+        if (cacheHit && cacheHit.filePath && fs.existsSync(cacheHit.filePath)) {
             res.setHeader('Content-Type', cacheHit.contentType || 'video/mp4');
             res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
-            return res.end(cacheHit.data);
+            return fs.createReadStream(cacheHit.filePath).pipe(res);
         }
         const ytdlp = spawn(ytdlpPath, [
             '--cookies', cookiesPath,
@@ -109,6 +113,19 @@ class DownloaderController {
                 }
             } else {
                 process.stdout.write(`\rDownloaded: ${(downloaded/1048576).toFixed(2)} MB (no total size)`);
+            }
+        });
+        // Save to disk and cache after download
+        const filePath = path.join(CACHE_DIR, `${videoId}_${quality}_video.mp4`);
+        const fileStream = fs.createWriteStream(filePath);
+        ytdlp.stdout.pipe(fileStream);
+        ytdlp.on('close', async (code) => {
+            if (code === 0) {
+                await Cache.findOneAndUpdate(
+                    { videoId, type: 'video', quality },
+                    { $set: { filePath, contentType: 'video/mp4', createdAt: new Date() } },
+                    { upsert: true }
+                );
             }
         });
         ytdlp.stdout.pipe(res);
@@ -161,6 +178,13 @@ class DownloaderController {
                 }
             }
         } catch (e) {}
+        // Check cache in MongoDB and on disk
+        const cacheHit = videoId ? await Cache.findOne({ videoId, type: 'audio', quality: 'mp3' }) : null;
+        if (cacheHit && cacheHit.filePath && fs.existsSync(cacheHit.filePath)) {
+            res.setHeader('Content-Type', cacheHit.contentType || 'audio/mp3');
+            res.setHeader('Content-Disposition', 'attachment; filename="audio.mp3"');
+            return fs.createReadStream(cacheHit.filePath).pipe(res);
+        }
         const ytdlp = spawn(ytdlpPath, [
             '--cookies', cookiesPath,
             '-o', '-', // output to stdout
@@ -183,6 +207,19 @@ class DownloaderController {
                 }
             } else {
                 process.stdout.write(`\rAudio Downloaded: ${(downloaded/1048576).toFixed(2)} MB (no total size)`);
+            }
+        });
+        // Save to disk and cache after download
+        const filePath = path.join(CACHE_DIR, `${videoId}_mp3_audio.mp3`);
+        const fileStream = fs.createWriteStream(filePath);
+        ytdlp.stdout.pipe(fileStream);
+        ytdlp.on('close', async (code) => {
+            if (code === 0 && videoId) {
+                await Cache.findOneAndUpdate(
+                    { videoId, type: 'audio', quality: 'mp3' },
+                    { $set: { filePath, contentType: 'audio/mp3', createdAt: new Date() } },
+                    { upsert: true }
+                );
             }
         });
         ytdlp.stdout.pipe(res);
