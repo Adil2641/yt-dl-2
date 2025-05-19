@@ -21,19 +21,15 @@ class DownloaderController {
         const ytdlpPath = this.getYtDlpPath();
         const cookiesPath = path.join(__dirname, '../../cookies.txt');
         res.header('Content-Disposition', `attachment; filename="video.mp4"`);
-        // Try to get filesize info, but never block download
         let totalSize = 0;
         let downloaded = 0;
         let percent = 0;
         let lastPercent = -1;
-        let infoDone = false;
-        // Always extract video ID and use clean URL for download
         let videoId = null;
         try {
             if (/^[a-zA-Z0-9_-]{11}$/.test(videoUrl)) {
                 videoId = videoUrl;
             } else {
-                // Extract video ID from any YouTube URL
                 const match = videoUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
                 if (match) videoId = match[1];
                 else if (videoUrl.includes('youtube.com/shorts')) {
@@ -51,71 +47,46 @@ class DownloaderController {
             return res.status(400).json({ error: 'Invalid YouTube video URL or ID.' });
         }
         const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        const infoProc = spawn(ytdlpPath, ['--cookies', cookiesPath, '-j', '--no-playlist', cleanUrl]);
-        let infoJson = '';
-        infoProc.stdout.on('data', (data) => {
-            infoJson += data.toString();
-        });
-        infoProc.on('close', () => {
-            if (!infoDone) {
-                try {
-                    const info = JSON.parse(infoJson);
-                    let format = (info.formats || []).find(f => f.ext === 'mp4' && f.vcodec !== 'none' && f.acodec !== 'none' && f.filesize);
-                    if (!format) format = (info.formats || []).find(f => f.ext === 'mp4' && f.filesize);
-                    totalSize = format && format.filesize ? format.filesize : 0;
-                } catch (e) { totalSize = 0; }
-                infoDone = true;
+        // Use selected quality if provided, otherwise best available
+        const formatArg = quality && quality !== 'best' ? quality : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+        const ytdlp = spawn(ytdlpPath, [
+            '--cookies', cookiesPath,
+            '-o', '-',
+            '-f', formatArg,
+            '--concurrent-fragments', '8',
+            '--no-playlist',
+            '--quiet',
+            cleanUrl
+        ]);
+        ytdlp.stdout.on('data', (chunk) => {
+            downloaded += chunk.length;
+            if (totalSize > 0) {
+                percent = Math.floor((downloaded / totalSize) * 100);
+                if (percent !== lastPercent) {
+                    process.stdout.write(`\rDownload: ${percent}% (${(downloaded/1048576).toFixed(2)}MB/${(totalSize/1048576).toFixed(2)}MB)`);
+                    lastPercent = percent;
+                }
+            } else {
+                process.stdout.write(`\rDownloaded: ${(downloaded/1048576).toFixed(2)} MB (no total size)`);
             }
         });
-        // Always start download after 2 seconds, do not wait for infoProc
-        setTimeout(() => {
-            if (!infoDone) infoDone = true;
-            startDownload();
-        }, 2000);
-        function startDownload() {
-            if (startDownload.started) return;
-            startDownload.started = true;
-            console.log('--- Starting full video download process ---');
-            console.log('URL:', cleanUrl);
-            // Use only the selected itag/quality, do not merge with bestaudio
-            const ytdlp = spawn(ytdlpPath, [
-                '--cookies', cookiesPath,
-                '-o', '-',
-                '-f', quality,
-                '--no-playlist',
-                '--quiet',
-                cleanUrl
-            ]);
-            ytdlp.stdout.on('data', (chunk) => {
-                downloaded += chunk.length;
-                if (totalSize > 0) {
-                    percent = Math.floor((downloaded / totalSize) * 100);
-                    if (percent !== lastPercent) {
-                        process.stdout.write(`\rDownload: ${percent}% (${(downloaded/1048576).toFixed(2)}MB/${(totalSize/1048576).toFixed(2)}MB)`);
-                        lastPercent = percent;
-                    }
-                } else {
-                    process.stdout.write(`\rDownloaded: ${(downloaded/1048576).toFixed(2)} MB (no total size)`);
-                }
-            });
-            ytdlp.stdout.pipe(res);
-            ytdlp.stderr.on('data', (data) => {
-                console.error(`yt-dlp error: ${data}`);
-            });
-            ytdlp.on('error', (err) => {
-                console.error(err);
-                if (!res.headersSent) {
-                    res.status(500).json({ error: 'Failed to start yt-dlp.' });
-                }
-            });
-            ytdlp.on('close', (code) => {
-                if (code !== 0 && !res.headersSent) {
-                    res.status(500).json({ error: 'yt-dlp failed to download video.' });
-                }
-                if (totalSize > 0) process.stdout.write('\n');
-                console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
-            });
-        }
+        ytdlp.stdout.pipe(res);
+        ytdlp.stderr.on('data', (data) => {
+            console.error(`yt-dlp error: ${data}`);
+        });
+        ytdlp.on('error', (err) => {
+            console.error(err);
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Failed to start yt-dlp.' });
+            }
+        });
+        ytdlp.on('close', (code) => {
+            if (totalSize > 0) process.stdout.write('\n');
+            console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
+            if (code !== 0 && !res.headersSent) {
+                res.status(500).json({ error: 'yt-dlp failed to download video.' });
+            }
+        });
     }
 
     async downloadAudio(req, res) {
