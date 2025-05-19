@@ -919,41 +919,25 @@
                     // Show only available qualities (no null itag, ext, or qualityLabel)
                     const qualityOptions = document.getElementById('qualityOptions');
                     qualityOptions.innerHTML = '';
-                    if (data.qualities && data.qualities.length > 0) {
-                        let first = true;
-                        const videoLine = document.createElement('div');
-                        videoLine.style.marginBottom = '10px';
-                        data.qualities.forEach(q => {
-                            // Only show qualities with both audio and video
-                            if (!q.itag || !q.qualityLabel || !q.audio || !q.video) return;
-                            let label = q.qualityLabel;
-                            if (q.filesize) {
-                                label += ` (${(q.filesize / 1048576).toFixed(2)} MB)`;
-                            } else {
-                                label += ' (Unknown size)';
-                            }
-                            const btn = document.createElement('button');
-                            btn.className = 'quality-btn' + (first ? ' active' : '');
-                            btn.textContent = label;
-                            btn.dataset.quality = q.itag;
-                            btn.onclick = function() { setQuality(this); };
-                            videoLine.appendChild(btn);
-                            if (first) { selectedQuality = q.itag; first = false; }
-                        });
-                        qualityOptions.appendChild(videoLine);
-                        if (!videoLine.hasChildNodes()) {
-                            const btn = document.createElement('button');
-                            btn.className = 'quality-btn active';
-                            btn.textContent = 'No valid audio+video qualities available';
-                            btn.disabled = true;
-                            qualityOptions.appendChild(btn);
-                            selectedQuality = 'best';
+                    let first = true;
+                    (data.formats || []).filter(q => q.hasAudio && q.hasVideo).forEach(q => {
+                        let label = q.qualityLabel || q.resolution || q.itag;
+                        if (q.filesize) {
+                            label += ` (${(q.filesize / 1048576).toFixed(2)} MB)`;
                         }
-                    } else {
+                        const btn = document.createElement('button');
+                        btn.className = 'quality-btn' + (first ? ' active' : '');
+                        btn.textContent = label;
+                        btn.dataset.quality = q.itag;
+                        btn.onclick = function() { setQuality(this); };
+                        qualityOptions.appendChild(btn);
+                        if (first) { selectedQuality = q.itag; first = false; }
+                    });
+                    if (!qualityOptions.hasChildNodes()) {
                         const btn = document.createElement('button');
                         btn.className = 'quality-btn active';
-                        btn.textContent = 'Best Quality';
-                        btn.dataset.quality = 'best';
+                        btn.textContent = 'No valid audio+video qualities available';
+                        btn.disabled = true;
                         qualityOptions.appendChild(btn);
                         selectedQuality = 'best';
                     }
