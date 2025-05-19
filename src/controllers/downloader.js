@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const ytdl = require('ytdl-core');
+const Cache = require('../models/cache');
 
 class DownloaderController {
     // Use correct yt-dlp binary for platform
@@ -47,8 +48,46 @@ class DownloaderController {
             return res.status(400).json({ error: 'Invalid YouTube video URL or ID.' });
         }
         const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        // Use selected quality if provided, otherwise best available
-        const formatArg = quality && quality !== 'best' ? quality : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+        // Always use info cache to get correct audio+video format
+        let formatArg = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+        if (quality && quality !== 'best') {
+            // Try to get info from cache (fast)
+            let info = null;
+            const cacheHit = await Cache.findOne({ videoId, type: 'info' });
+            if (cacheHit && cacheHit.info && Array.isArray(cacheHit.info.formats)) {
+                info = cacheHit.info;
+            } else {
+                // Fallback: fetch info from yt-dlp
+                try {
+                    const infoProc = spawn(ytdlpPath, ['--cookies', cookiesPath, '-j', '--no-playlist', cleanUrl]);
+                    let infoJson = '';
+                    await new Promise((resolve) => {
+                        infoProc.stdout.on('data', (data) => { infoJson += data.toString(); });
+                        infoProc.on('close', () => { resolve(); });
+                    });
+                    info = JSON.parse(infoJson);
+                } catch (e) {}
+            }
+            if (info) {
+                const selectedFormat = (info.formats || []).find(f => f.format_id === quality);
+                if (selectedFormat) {
+                    if (selectedFormat.vcodec !== 'none' && selectedFormat.acodec !== 'none') {
+                        formatArg = quality;
+                    } else if (selectedFormat.vcodec !== 'none' && selectedFormat.acodec === 'none') {
+                        formatArg = `${quality}+bestaudio[ext=m4a]/bestaudio/best`;
+                    } else {
+                        formatArg = quality;
+                    }
+                }
+            }
+        }
+        // Check cache first
+        const cacheHit = await Cache.findOne({ videoId, type: 'video', quality });
+        if (cacheHit && cacheHit.data) {
+            res.setHeader('Content-Type', cacheHit.contentType || 'video/mp4');
+            res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
+            return res.end(cacheHit.data);
+        }
         const ytdlp = spawn(ytdlpPath, [
             '--cookies', cookiesPath,
             '-o', '-',
@@ -58,7 +97,9 @@ class DownloaderController {
             '--quiet',
             cleanUrl
         ]);
+        const chunks = [];
         ytdlp.stdout.on('data', (chunk) => {
+            chunks.push(chunk);
             downloaded += chunk.length;
             if (totalSize > 0) {
                 percent = Math.floor((downloaded / totalSize) * 100);
@@ -99,6 +140,27 @@ class DownloaderController {
         const cookiesPath = path.join(__dirname, '../../cookies.txt');
         res.header('Content-Disposition', 'attachment; filename="audio.mp3"');
         console.log('Download started for:', videoUrl);
+        // Extract videoId for cache
+        let videoId = null;
+        let downloaded = 0;
+        let totalSize = 0;
+        let percent = 0;
+        let lastPercent = -1;
+        try {
+            if (/^[a-zA-Z0-9_-]{11}$/.test(videoUrl)) {
+                videoId = videoUrl;
+            } else {
+                const match = videoUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+                if (match) videoId = match[1];
+                else if (videoUrl.includes('youtube.com/shorts')) {
+                    const m = videoUrl.match(/shorts\/([a-zA-Z0-9_-]{11})/);
+                    if (m) videoId = m[1];
+                } else if (videoUrl.includes('youtu.be/')) {
+                    const m = videoUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+                    if (m) videoId = m[1];
+                }
+            }
+        } catch (e) {}
         const ytdlp = spawn(ytdlpPath, [
             '--cookies', cookiesPath,
             '-o', '-', // output to stdout
@@ -109,11 +171,9 @@ class DownloaderController {
             '--no-playlist',
             videoUrl
         ]);
-        let totalSize = 0;
-        let downloaded = 0;
-        let percent = 0;
-        let lastPercent = -1;
+        const chunks = [];
         ytdlp.stdout.on('data', (chunk) => {
+            chunks.push(chunk);
             downloaded += chunk.length;
             if (totalSize > 0) {
                 percent = Math.floor((downloaded / totalSize) * 100);
@@ -219,6 +279,27 @@ class DownloaderController {
 
         const ytdlpPath = this.getYtDlpPath();
         const cookiesPath = path.join(__dirname, '../../cookies.txt');
+        // Check cache first
+        const cacheHit = await Cache.findOne({ videoId, type: 'info' });
+        if (cacheHit && cacheHit.info) {
+            const info = cacheHit.info;
+            return res.json({
+                title: info.title,
+                description: info.description,
+                duration: info.duration,
+                view_count: info.view_count,
+                thumbnail: (info.thumbnails && info.thumbnails.length > 0) ? info.thumbnails[info.thumbnails.length - 1].url : '',
+                formats: (info.formats || []).map(f => ({
+                    itag: f.format_id,
+                    ext: f.ext,
+                    resolution: f.resolution || '',
+                    qualityLabel: f.quality_label || f.format_note || '',
+                    filesize: f.filesize || f.filesize_approx || null,
+                    hasAudio: f.acodec !== 'none',
+                    hasVideo: f.vcodec !== 'none'
+                }))
+            });
+        }
         try {
             const ytdlp = spawn(ytdlpPath, [
                 '--cookies', cookiesPath,
@@ -246,7 +327,7 @@ class DownloaderController {
                     ytdlp.kill('SIGKILL');
                 }
             }, 30000); // 30 seconds timeout
-            ytdlp.on('close', (code) => {
+            ytdlp.on('close', async (code) => {
                 clearTimeout(timeout);
                 if (code !== 0) {
                     console.error(`yt-dlp exited with code ${code}`);
@@ -266,20 +347,25 @@ class DownloaderController {
                             filesize: f.filesize || f.filesize_approx || null
                         })));
                     }
-                    res.json({
+                    await Cache.findOneAndUpdate(
+                        { videoId, type: 'info' },
+                        { $set: { info, createdAt: new Date() } },
+                        { upsert: true }
+                    );
+                    return res.json({
                         title: info.title,
-                        thumbnail: (info.thumbnails && info.thumbnails.length > 0) ? info.thumbnails[info.thumbnails.length - 1].url : '',
+                        description: info.description,
                         duration: info.duration,
-                        views: info.view_count,
-                        isShorts: cleanUrl.includes('youtube.com/shorts') || cleanUrl.includes('youtu.be/shorts'),
-                        qualities: (info.formats || []).map(f => ({
+                        view_count: info.view_count,
+                        thumbnail: (info.thumbnails && info.thumbnails.length > 0) ? info.thumbnails[info.thumbnails.length - 1].url : '',
+                        formats: (info.formats || []).map(f => ({
                             itag: f.format_id,
-                            qualityLabel: f.resolution || f.format_note || f.format_id,
-                            resolution: f.resolution || '',
                             ext: f.ext,
-                            audio: f.acodec !== 'none',
-                            video: f.vcodec !== 'none',
-                            filesize: f.filesize || f.filesize_approx || null
+                            resolution: f.resolution || '',
+                            qualityLabel: f.quality_label || f.format_note || '',
+                            filesize: f.filesize || f.filesize_approx || null,
+                            hasAudio: f.acodec !== 'none',
+                            hasVideo: f.vcodec !== 'none'
                         }))
                     });
                 } catch (err) {
