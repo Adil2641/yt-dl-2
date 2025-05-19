@@ -7,7 +7,7 @@ const cacheSchema = new mongoose.Schema({
     data: { type: Buffer }, // for video/audio
     info: { type: mongoose.Schema.Types.Mixed }, // for info
     contentType: { type: String }, // e.g. 'video/mp4', 'audio/mp3'
-    createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 7 } // 7 days TTL
+    createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 } // 30 days TTL
 });
 
 cacheSchema.index({ videoId: 1, type: 1, quality: 1 }, { unique: true });
