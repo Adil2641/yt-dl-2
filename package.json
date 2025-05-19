@@ -1,0 +1,19 @@
+{
+  "name": "youtube-downloader-api",
+  "version": "1.0.0",
+  "description": "A simple API to download YouTube videos using ytdl-core.",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "postinstall": "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp && chmod +x yt-dlp"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "express": "^4.17.1",
+    "mongoose": "^8.15.0",
+    "nodemailer": "^7.0.3",
+    "ytdl-core": "^4.11.5"
+  },
+  "author": "",
+  "license": "ISC"
+}
