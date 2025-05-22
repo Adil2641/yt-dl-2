@@ -318,7 +318,7 @@
         if (!key) return;
         fetch('/api/admin/feedbacks-stats', { headers: { 'x-admin-key': key } })
         .then(res => res.json())
-        .then data => {
+        .then(data => {
             if (data.error) return;
             const stats = document.getElementById('adminStats');
             stats.innerHTML = `<b>Total:</b> ${data.total} | <b>Today:</b> ${data.perDay[0]?.count || 0} | <b>This week:</b> ${data.perWeek[0]?.count || 0} | <b>Top words:</b> ${data.commonWords.map(w => w[0]).join(', ')}`;
