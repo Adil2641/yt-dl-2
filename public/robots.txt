@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://yt-dl-2.onrender.com/sitemap.xml
