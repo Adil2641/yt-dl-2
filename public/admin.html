@@ -86,6 +86,18 @@
             .modal-content { padding: 1rem; }
         }
     </style>
+    <meta name="description" content="Admin dashboard for managing feedbacks on YouTube Downloader Pro.">
+    <meta name="keywords" content="admin, feedback, dashboard, YouTube downloader, management">
+    <meta name="robots" content="noindex, nofollow">
+    <meta property="og:title" content="Admin Feedbacks - YouTube Downloader Pro">
+    <meta property="og:description" content="Admin dashboard for managing feedbacks on YouTube Downloader Pro.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://your-domain.com/admin.html">
+    <meta property="og:image" content="https://www.youtube.com/s/desktop/6e6e6e6/img/favicon_32x32.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Admin Feedbacks - YouTube Downloader Pro">
+    <meta name="twitter:description" content="Admin dashboard for managing feedbacks on YouTube Downloader Pro.">
+    <meta name="twitter:image" content="https://www.youtube.com/s/desktop/6e6e6e6/img/favicon_32x32.png">
 </head>
 <body>
     <div class="admin-container">
@@ -306,7 +318,7 @@
         if (!key) return;
         fetch('/api/admin/feedbacks-stats', { headers: { 'x-admin-key': key } })
         .then(res => res.json())
-        .then(data => {
+        .then data => {
             if (data.error) return;
             const stats = document.getElementById('adminStats');
             stats.innerHTML = `<b>Total:</b> ${data.total} | <b>Today:</b> ${data.perDay[0]?.count || 0} | <b>This week:</b> ${data.perWeek[0]?.count || 0} | <b>Top words:</b> ${data.commonWords.map(w => w[0]).join(', ')}`;
