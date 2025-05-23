@@ -3,6 +3,7 @@ const downloadRoutes = require('./routes/download');
 const path = require('path');
 const mongoose = require('mongoose');
 const Feedback = require('./models/feedback');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -29,6 +30,7 @@ function adminAuth(req, res, next) {
 app.use(express.json());
 app.use('/api', downloadRoutes);
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/cache', express.static(path.join(__dirname, '../cache')));
 
 // Feedback submission endpoint (no email, just store)
 app.post('/api/feedback', async (req, res) => {
@@ -179,6 +181,29 @@ app.get('/api/admin/activity-log', adminAuth, (req, res) => {
 app.get('/api/uptime', (req, res) => {
     const uptimeSeconds = process.uptime();
     res.json({ uptime: uptimeSeconds });
+});
+
+// List cached video files (admin only)
+app.get('/api/admin/video-list', adminAuth, (req, res) => {
+    const cacheDir = path.join(__dirname, '../cache');
+    fs.readdir(cacheDir, (err, files) => {
+        if (err) return res.status(500).json({ error: 'Failed to read cache folder.' });
+        // Only return .mp4 files
+        const videos = files.filter(f => f.endsWith('.mp4'));
+        res.json({ videos });
+    });
+});
+
+// Video info endpoint for admin (by videoId)
+app.get('/api/admin/video-info', adminAuth, async (req, res) => {
+    const videoId = req.query.videoId;
+    if (!videoId) return res.status(400).json({ error: 'Missing videoId.' });
+    // Use the same logic as getVideoInfo in DownloaderController
+    const DownloaderController = require('./controllers/downloader');
+    const ctrl = new DownloaderController();
+    // Simulate req.query.url for getVideoInfo
+    req.query.url = videoId;
+    return ctrl.getVideoInfo(req, res);
 });
 
 app.listen(PORT, '0.0.0.0', () => {
