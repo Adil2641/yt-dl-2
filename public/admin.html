@@ -120,24 +120,33 @@
         <div class="admin-key-box">
             <input type="password" id="adminKey" placeholder="Enter Admin Key">
             <button type="button" id="toggleAdminKey" title="Show/Hide Password"><i class="fas fa-eye"></i></button>
-            <button id="viewFeedbacksBtn" onclick="loadFeedbacks()">View Feedbacks</button>
+            <button id="viewFeedbacksBtn">View Feedbacks</button>
         </div>
-        <div id="result"></div>
-        <div class="feedback-list" id="feedbackList"></div>
-        <div class="pagination" id="pagination"></div>
-        <div class="multi-delete-bar" id="multiDeleteBar" style="display:none;">
-            <button id="multiDeleteBtn"><i class="fas fa-trash"></i> Delete Selected</button>
-            <span id="selectedCount"></span>
-        </div>
-        <div class="modal" id="detailsModal" style="display:none;">
-            <div class="modal-content">
-                <span class="close" id="closeModal">&times;</span>
-                <div id="modalDetails"></div>
+        <div id="adminContent" style="display:none;">
+            <div id="result"></div>
+            <!-- Video Playlist & Player Section (hidden by default) -->
+            <div id="videoSection" style="margin:2rem 0; text-align:center; display:none;">
+                <h2>Video Playlist</h2>
+                <div id="videoList" style="margin-bottom:1rem;"></div>
+                <video id="adminVideoPlayer" width="480" controls style="max-width:100%; background:#000; display:none;"></video>
+                <div id="videoInfoSection" style="display:none; margin-bottom:1.5rem; text-align:left; background:var(--result-bg); border-radius:8px; padding:1rem; max-width:480px; margin-left:auto; margin-right:auto;"></div>
             </div>
-        </div>
-        <div class="activity-log-section">
-            <h2>Admin Activity Log</h2>
-            <div id="activityLog"></div>
+            <div class="feedback-list" id="feedbackList"></div>
+            <div class="pagination" id="pagination"></div>
+            <div class="multi-delete-bar" id="multiDeleteBar" style="display:none;">
+                <button id="multiDeleteBtn"><i class="fas fa-trash"></i> Delete Selected</button>
+                <span id="selectedCount"></span>
+            </div>
+            <div class="modal" id="detailsModal" style="display:none;">
+                <div class="modal-content">
+                    <span class="close" id="closeModal">&times;</span>
+                    <div id="modalDetails"></div>
+                </div>
+            </div>
+            <div class="activity-log-section">
+                <h2>Admin Activity Log</h2>
+                <div id="activityLog"></div>
+            </div>
         </div>
     </div>
     <script>
@@ -168,6 +177,7 @@
         adminKeyCache = '';
         document.getElementById('feedbackList').innerHTML = '';
         document.getElementById('result').textContent = 'Logged out.';
+        hideAdminContent();
     };
 
     // Feedback details modal
@@ -400,12 +410,119 @@
     showUptime();
     setInterval(showUptime, 10000);
 
-    // Initial load
+    // Video player source changer
+    function changeVideoSrc() {
+        var input = document.getElementById('videoSrcInput');
+        var player = document.getElementById('adminVideoPlayer');
+        if (input && player) {
+            player.src = '/cache/' + input.value.trim();
+            player.load();
+            player.play();
+        }
+    }
+
+    // Show/hide video section after admin login
+    function showVideoSection() {
+        document.getElementById('videoSection').style.display = '';
+        loadVideoList();
+    }
+    function hideVideoSection() {
+        document.getElementById('videoSection').style.display = 'none';
+        document.getElementById('adminVideoPlayer').style.display = 'none';
+    }
+    // Fetch and display video list
+    function loadVideoList() {
+        const key = getAdminKey();
+        fetch('/api/admin/video-list', { headers: { 'x-admin-key': key } })
+            .then(res => res.json())
+            .then(data => {
+                const listDiv = document.getElementById('videoList');
+                if (data.error) {
+                    listDiv.innerHTML = '<span class="error">' + data.error + '</span>';
+                    return;
+                }
+                if (!data.videos.length) {
+                    listDiv.innerHTML = '<span>No videos found in cache.</span>';
+                    return;
+                }
+                listDiv.innerHTML = data.videos.map(f => `<button onclick="playVideo('${f}')">${f}</button>`).join(' ');
+            });
+    }
+    // Play selected video
+    function playVideo(filename) {
+        const player = document.getElementById('adminVideoPlayer');
+        player.src = '/cache/' + filename;
+        player.style.display = '';
+        player.load();
+        player.play();
+        showVideoInfo(filename);
+    }
+    // Show video info in the admin page
+    function showVideoInfo(filename) {
+        // Extract videoId from filename (format: <videoId>_<quality>_video.mp4)
+        var videoId = filename.split('_')[0];
+        var infoDiv = document.getElementById('videoInfoSection');
+        infoDiv.style.display = 'block';
+        infoDiv.innerHTML = 'Loading video info...';
+        fetch(`/api/admin/video-info?videoId=${videoId}`, { headers: { 'x-admin-key': getAdminKey() } })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    infoDiv.innerHTML = `<span class='error'>${data.error}</span>`;
+                    return;
+                }
+                infoDiv.innerHTML = `
+                    <b>Title:</b> ${data.title || ''}<br>
+                    <b>Duration:</b> ${data.duration || ''} seconds<br>
+                    <b>Views:</b> ${data.view_count || ''}<br>
+                    <b>Description:</b> <pre style='white-space:pre-wrap;'>${data.description || ''}</pre>
+                    ${data.thumbnail ? `<img src='${data.thumbnail}' alt='thumbnail' style='max-width:100%;margin-top:0.5rem;'>` : ''}
+                `;
+            });
+    }
+
+    // Show/hide all admin content after login/logout
+    function showAdminContent() {
+        document.getElementById('adminContent').style.display = '';
+        showVideoSection();
+    }
+    function hideAdminContent() {
+        document.getElementById('adminContent').style.display = 'none';
+        hideVideoSection();
+    }
+    // Hide all content on load
+    hideAdminContent();
+    // Show content after successful admin login
     document.getElementById('viewFeedbacksBtn').onclick = () => {
         adminKeyCache = document.getElementById('adminKey').value.trim();
-        loadFeedbacks();
-        loadStats();
-        loadActivityLog();
+        if (!adminKeyCache) {
+            document.getElementById('result').textContent = 'Please enter the admin key.';
+            document.getElementById('result').className = 'error';
+            return;
+        }
+        // Try to load feedbacks to check key
+        fetch(`/api/admin/feedbacks`, { headers: { 'x-admin-key': adminKeyCache } })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('result').textContent = data.error;
+                    document.getElementById('result').className = 'error';
+                    hideAdminContent();
+                } else {
+                    showAdminContent();
+                    loadFeedbacks();
+                    loadStats();
+                    loadActivityLog();
+                }
+            });
+    };
+    // Hide all content on logout
+    document.getElementById('logoutBtn').onclick = () => {
+        document.getElementById('adminKey').value = '';
+        adminKeyCache = '';
+        document.getElementById('feedbackList').innerHTML = '';
+        document.getElementById('result').textContent = 'Logged out.';
+        hideAdminContent();
     };
     </script>
 </body>
