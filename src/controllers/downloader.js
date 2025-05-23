@@ -324,7 +324,8 @@ class DownloaderController {
                 title: info.title,
                 description: info.description,
                 duration: info.duration,
-                view_count: info.view_count,
+                views: info.view_count, // <-- add this alias for frontend
+                view_count: info.view_count, // keep for admin
                 thumbnail: (info.thumbnails && info.thumbnails.length > 0) ? info.thumbnails[info.thumbnails.length - 1].url : '',
                 formats: (info.formats || []).map(f => ({
                     itag: f.format_id,
@@ -393,7 +394,8 @@ class DownloaderController {
                         title: info.title,
                         description: info.description,
                         duration: info.duration,
-                        view_count: info.view_count,
+                        views: info.view_count, // <-- add this alias for frontend
+                        view_count: info.view_count, // keep for admin
                         thumbnail: (info.thumbnails && info.thumbnails.length > 0) ? info.thumbnails[info.thumbnails.length - 1].url : '',
                         formats: (info.formats || []).map(f => ({
                             itag: f.format_id,
