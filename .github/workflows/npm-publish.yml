@@ -1,16 +1,12 @@
-Here's your updated GitHub Actions workflow file with the **"Run workflow" button** enabled by adding the `workflow_dispatch` trigger:
-
-```yaml
-# This workflow will run tests using node and then publish a package to GitHub Packages when a release is created
+# This workflow will run tests using Node.js and then publish a package to npm when a release is created.
 # It also supports manual triggering via the Run button.
-# For more information see: https://docs.github.com/en/actions/publishing-packages/publishing-nodejs-packages
 
 name: Node.js Package
 
 on:
   release:
     types: [created]
-  workflow_dispatch:  # 👈 Enables the Run button in the GitHub Actions UI
+  workflow_dispatch:  # Enables the Run button in the GitHub Actions UI
 
 jobs:
   build:
@@ -36,9 +32,3 @@ jobs:
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.npm_token }}
-```
-
-### ✅ Now this workflow:
-
-* **Automatically runs on release creation**
-* **Can also be triggered manually** from the GitHub Actions tab using the **"Run workflow"** button.
