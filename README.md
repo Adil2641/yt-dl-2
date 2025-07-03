@@ -4,6 +4,24 @@ A modern, full-featured YouTube video and audio downloader built with Node.js, E
 
 ---
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?logo=windows&logoColor=white" alt="System Type">
+  <a href="https://github.com/Adil2641/yt-dl-2">
+    <img src="https://img.shields.io/github/stars/Adil2641/yt-dl-2?style=social" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/Adil2641/yt-dl-2">
+    <img src="https://img.shields.io/github/forks/Adil2641/yt-dl-2?style=social" alt="GitHub forks">
+  </a>
+  <a href="https://github.com/Adil2641/yt-dl-2">
+    <img src="https://img.shields.io/github/issues/Adil2641/yt-dl-2" alt="GitHub issues">
+  </a>
+  <a href="https://github.com/Adil2641/yt-dl-2/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/Adil2641/yt-dl-2" alt="License">
+  </a>
+</p>
+
+---
+
 ## 🚀 Features
 
 - 🎬 Download YouTube videos and music in high quality (MP4/MP3)
@@ -29,8 +47,8 @@ A modern, full-featured YouTube video and audio downloader built with Node.js, E
 
 1. **Clone the repository:**
    ```sh
-   git clone https://github.com/Adil2641/yt-dl-2.git.git
-   cd youtube-downloader-api
+   git clone https://github.com/Adil2641/yt-dl-2.git
+   cd yt-dl-2
    ```
 2. **Install dependencies:**
    ```sh
@@ -97,6 +115,14 @@ Pull requests and suggestions are welcome! Please open an issue or PR for improv
 ## 📄 License
 
 MIT License — see [LICENSE](./LICENSE) for details.
+
+---
+
+## 📣 GitHub
+
+- **Repository:** [Adil2641/yt-dl-2](https://github.com/Adil2641/yt-dl-2)
+- **Issues:** [Report a bug or request a feature](https://github.com/Adil2641/yt-dl-2/issues)
+- **Star this project:** If you like it, please ⭐️ the repo!
 
 ---
 
