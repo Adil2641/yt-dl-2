@@ -6,8 +6,9 @@ const Feedback = require('./models/feedback');
 const fs = require('fs');
 require('dotenv').config();
 
+const config = require('./config');
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.app.port || 3000;
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/yt-dl-2')
@@ -206,6 +207,6 @@ app.get('/api/admin/video-info', adminAuth, async (req, res) => {
     return ctrl.getVideoInfo(req, res);
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+app.listen(PORT, config.app.host || '0.0.0.0', () => {
+    console.log(`Server is running on http://${config.app.host || '0.0.0.0'}:${PORT} (mode=${config.app.mode})`);
 });
