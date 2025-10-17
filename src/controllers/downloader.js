@@ -15,6 +15,7 @@ class DownloaderController {
     }
 
     async downloadVideo(req, res) {
+        let responded = false;
         const videoUrl = req.query.url;
         const quality = req.query.quality || 'best';
         if (!videoUrl) {
@@ -139,22 +140,32 @@ class DownloaderController {
         });
         ytdlp.on('error', (err) => {
             console.error(err);
-            if (!res.headersSent) {
+            if (!responded && !res.headersSent) {
+                responded = true;
                 res.status(500).json({ error: 'Failed to start yt-dlp.' });
             }
         });
+        let timeout = setTimeout(() => {
+            if (!responded && !res.headersSent) {
+                responded = true;
+                console.error('Timeout: yt-dlp took too long to respond.');
+                res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
+                ytdlp.kill('SIGKILL');
+            }
+        }, 30000);
         ytdlp.on('close', (code) => {
+            clearTimeout(timeout);
+            if (responded) return;
+            responded = true;
             if (totalSize > 0) process.stdout.write('\n');
             console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
             // If yt-dlp reported cookie/auth problems, return actionable 403/400
             const stderrLower = stderrBuf.toLowerCase();
             if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies') ) {
-                if (!res.headersSent) {
-                    const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                    return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-                }
+                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
             }
-            if (code !== 0 && !res.headersSent) {
+            if (code !== 0) {
                 res.status(500).json({ error: 'yt-dlp failed to download video.', details: stderrBuf.slice(0, 2000) });
             }
         });
@@ -237,36 +248,40 @@ class DownloaderController {
                 );
             }
         });
-        let hasError = false;
-
+        let responded = false;
         let stderrBuf = '';
         ytdlp.stderr.on('data', (data) => {
             const s = data.toString();
             stderrBuf += s;
             console.error(`yt-dlp stderr: ${s}`);
-            hasError = true;
         });
-
         ytdlp.on('error', (err) => {
             console.error(err);
-            hasError = true;
-            if (!res.headersSent) {
+            if (!responded && !res.headersSent) {
+                responded = true;
                 res.status(500).json({ error: 'Failed to start yt-dlp.' });
             }
         });
-
+        let timeout = setTimeout(() => {
+            if (!responded && !res.headersSent) {
+                responded = true;
+                console.error('Timeout: yt-dlp took too long to respond.');
+                res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
+                ytdlp.kill('SIGKILL');
+            }
+        }, 30000);
         ytdlp.on('close', (code) => {
+            clearTimeout(timeout);
+            if (responded) return;
+            responded = true;
             if (totalSize > 0) process.stdout.write('\n');
             console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
-            if (!hasError) {
-                ytdlp.stdout.pipe(res);
-            } else if (!res.headersSent) {
-                // cookie/auth checks
-                const stderrLower = stderrBuf.toLowerCase();
-                if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
-                    const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                    return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-                }
+            const stderrLower = stderrBuf.toLowerCase();
+            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
+                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
+            }
+            if (code !== 0) {
                 res.status(500).json({ error: 'yt-dlp failed to download audio.', details: stderrBuf.slice(0, 2000) });
             }
         });
@@ -294,6 +309,7 @@ class DownloaderController {
         if (cookiesExist) ytdlpArgs.unshift('--cookies', cookiesPath);
 
         const ytdlp = spawn(ytdlpPath, ytdlpArgs);
+        let responded = false;
         let stderrBuf = '';
         ytdlp.stderr.on('data', (data) => {
             const s = data.toString();
@@ -305,20 +321,29 @@ class DownloaderController {
 
         ytdlp.on('error', (err) => {
             console.error(err);
-            if (!res.headersSent) {
+            if (!responded && !res.headersSent) {
+                responded = true;
                 res.status(500).json({ error: 'Failed to start yt-dlp.' });
             }
         });
-
+        let timeout = setTimeout(() => {
+            if (!responded && !res.headersSent) {
+                responded = true;
+                console.error('Timeout: yt-dlp took too long to respond.');
+                res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
+                ytdlp.kill('SIGKILL');
+            }
+        }, 30000);
         ytdlp.on('close', (code) => {
+            clearTimeout(timeout);
+            if (responded) return;
+            responded = true;
             const stderrLower = stderrBuf.toLowerCase();
             if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
-                if (!res.headersSent) {
-                    const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                    return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-                }
+                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
             }
-            if (code !== 0 && !res.headersSent) {
+            if (code !== 0) {
                 res.status(500).json({ error: 'yt-dlp failed to download Shorts video.', details: stderrBuf.slice(0,2000) });
             }
         });
@@ -380,6 +405,7 @@ class DownloaderController {
             });
         }
         try {
+            let responded = false;
             const infoArgs = ['-j', cleanUrl];
             if (cookiesExist) infoArgs.unshift('--cookies', cookiesPath);
             const ytdlp = spawn(ytdlpPath, infoArgs);
@@ -396,12 +422,14 @@ class DownloaderController {
             });
             ytdlp.on('error', (err) => {
                 console.error('yt-dlp process error:', err);
-                if (!res.headersSent) {
+                if (!responded && !res.headersSent) {
+                    responded = true;
                     res.status(500).json({ error: 'Failed to fetch video info.' });
                 }
             });
             let timeout = setTimeout(() => {
-                if (!res.headersSent) {
+                if (!responded && !res.headersSent) {
+                    responded = true;
                     console.error('Timeout: yt-dlp took too long to respond.');
                     res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
                     ytdlp.kill('SIGKILL');
@@ -409,6 +437,8 @@ class DownloaderController {
             }, 30000); // 30 seconds timeout
             ytdlp.on('close', async (code) => {
                 clearTimeout(timeout);
+                if (responded) return;
+                responded = true;
                 if (code !== 0) {
                     console.error(`yt-dlp exited with code ${code}`);
                     // Inspect stderr for cookie/auth problems
