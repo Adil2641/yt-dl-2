@@ -10,11 +10,25 @@ if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR);
 class DownloaderController {
     // Use correct yt-dlp binary for platform
     getYtDlpPath() {
-        if (process.platform === 'win32') {
-            return path.join(__dirname, '../../yt-dlp.exe');
-        } else {
-            return path.join(__dirname, '../../yt-dlp');
+        // Check if we're in Render's environment
+        const isRender = process.env.RENDER === 'true';
+        
+        // Get the appropriate path based on platform
+        const ytdlpPath = process.platform === 'win32' 
+            ? path.join(__dirname, '../../yt-dlp.exe')
+            : path.join(__dirname, '../../yt-dlp');
+        
+        // Set executable permissions if we're on Render or Unix
+        if (process.platform !== 'win32' || isRender) {
+            try {
+                fs.chmodSync(ytdlpPath, 0o755); // Use octal notation for permissions
+                console.log('Set executable permissions for yt-dlp');
+            } catch (error) {
+                console.error('Error setting yt-dlp permissions:', error);
+            }
         }
+        
+        return ytdlpPath;
     }
 
     async downloadVideo(req, res) {
@@ -222,14 +236,16 @@ class DownloaderController {
                 );
             }
         });
-        ytdlp.stdout.pipe(res);
+        let hasError = false;
 
         ytdlp.stderr.on('data', (data) => {
             console.error(`yt-dlp error: ${data}`);
+            hasError = true;
         });
 
         ytdlp.on('error', (err) => {
             console.error(err);
+            hasError = true;
             if (!res.headersSent) {
                 res.status(500).json({ error: 'Failed to start yt-dlp.' });
             }
@@ -237,9 +253,11 @@ class DownloaderController {
 
         ytdlp.on('close', (code) => {
             if (totalSize > 0) process.stdout.write('\n');
-            console.log(`\n--- Audio download process finished for: ${videoUrl} ---`);
-            if (code !== 0 && !res.headersSent) {
-                res.status(500).json({ error: 'yt-dlp failed to download audio.' });
+            console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
+            if (!hasError) {
+                ytdlp.stdout.pipe(res);
+            } else if (!res.headersSent) {
+                res.status(500).json({ error: 'yt-dlp failed to download video.' });
             }
         });
     }
