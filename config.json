@@ -1,0 +1,41 @@
+{
+  "app": {
+    "port": 3000,
+    "host": "0.0.0.0",
+    "trustProxy": false,
+    "mode": "auto"
+  },
+  "paths": {
+    "public": "./public",
+    "cacheDir": "./cache",
+    "cookies": "./cookies.txt",
+    "ytDlp": {
+      "defaultUnix": "./yt-dlp",
+      "defaultWin": "./yt-dlp.exe"
+    }
+  },
+  "ytDlp": {
+    "concurrentFragments": 8,
+    "defaultFormat": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    "audioFormat": "mp3",
+    "quiet": true,
+    "timeoutMs": 30000
+  },
+  "cache": {
+    "useMongo": true,
+    "mongoTtlDays": 30,
+    "diskFallback": true
+  },
+  "logging": {
+    "level": "info",
+    "console": true,
+    "file": null
+  },
+  "admin": {
+    "headerKeyName": "x-admin-key",
+    "maxActivityLog": 1000
+  },
+  "security": {
+    "requireAdminKeyForList": true
+  }
+}
