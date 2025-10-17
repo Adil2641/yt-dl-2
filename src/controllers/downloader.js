@@ -20,8 +20,9 @@ class DownloaderController {
         if (!videoUrl) {
             return res.status(400).json({ error: 'Missing YouTube URL.' });
         }
-        const ytdlpPath = this.getYtDlpPath();
-        const cookiesPath = path.join(__dirname, '../../cookies.txt');
+    const ytdlpPath = this.getYtDlpPath();
+    const cookiesPath = path.join(__dirname, '../../cookies.txt');
+    const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
         res.header('Content-Disposition', `attachment; filename="video.mp4"`);
         let totalSize = 0;
         let downloaded = 0;
@@ -60,7 +61,9 @@ class DownloaderController {
             } else {
                 // Fallback: fetch info from yt-dlp
                 try {
-                    const infoProc = spawn(ytdlpPath, ['--cookies', cookiesPath, '-j', '--no-playlist', cleanUrl]);
+                    const infoArgs = ['-j', '--no-playlist', cleanUrl];
+                    if (cookiesExist) infoArgs.unshift('--cookies', cookiesPath);
+                    const infoProc = spawn(ytdlpPath, infoArgs);
                     let infoJson = '';
                     await new Promise((resolve) => {
                         infoProc.stdout.on('data', (data) => { infoJson += data.toString(); });
@@ -89,15 +92,16 @@ class DownloaderController {
             res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
             return fs.createReadStream(cacheHit.filePath).pipe(res);
         }
-        const ytdlp = spawn(ytdlpPath, [
-            '--cookies', cookiesPath,
+        const ytdlpArgs = [
             '-o', '-',
             '-f', formatArg,
-            '--concurrent-fragments', '8',
+            '--concurrent-fragments', String(config.ytDlp && config.ytDlp.concurrentFragments ? config.ytDlp.concurrentFragments : 8),
             '--no-playlist',
             '--quiet',
             cleanUrl
-        ]);
+        ];
+        if (cookiesExist) ytdlpArgs.unshift('--cookies', cookiesPath);
+        const ytdlp = spawn(ytdlpPath, ytdlpArgs);
         const chunks = [];
         ytdlp.stdout.on('data', (chunk) => {
             chunks.push(chunk);
@@ -126,8 +130,12 @@ class DownloaderController {
             }
         });
         ytdlp.stdout.pipe(res);
+        // Collect stderr to inspect yt-dlp warnings/errors (useful on Render)
+        let stderrBuf = '';
         ytdlp.stderr.on('data', (data) => {
-            console.error(`yt-dlp error: ${data}`);
+            const s = data.toString();
+            stderrBuf += s;
+            console.error(`yt-dlp stderr: ${s}`);
         });
         ytdlp.on('error', (err) => {
             console.error(err);
@@ -138,8 +146,16 @@ class DownloaderController {
         ytdlp.on('close', (code) => {
             if (totalSize > 0) process.stdout.write('\n');
             console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
+            // If yt-dlp reported cookie/auth problems, return actionable 403/400
+            const stderrLower = stderrBuf.toLowerCase();
+            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies') ) {
+                if (!res.headersSent) {
+                    const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                    return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
+                }
+            }
             if (code !== 0 && !res.headersSent) {
-                res.status(500).json({ error: 'yt-dlp failed to download video.' });
+                res.status(500).json({ error: 'yt-dlp failed to download video.', details: stderrBuf.slice(0, 2000) });
             }
         });
     }
@@ -150,9 +166,10 @@ class DownloaderController {
             return res.status(400).json({ error: 'Missing YouTube URL.' });
         }
 
-        const ytdlpPath = this.getYtDlpPath();
-        const cookiesPath = path.join(__dirname, '../../cookies.txt');
-        res.header('Content-Disposition', 'attachment; filename="audio.mp3"');
+    const ytdlpPath = this.getYtDlpPath();
+    const cookiesPath = path.join(__dirname, '../../cookies.txt');
+    const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
+    res.header('Content-Disposition', 'attachment; filename="audio.mp3"');
         console.log('Download started for:', videoUrl);
         // Extract videoId for cache
         let videoId = null;
@@ -182,8 +199,7 @@ class DownloaderController {
             res.setHeader('Content-Disposition', 'attachment; filename="audio.mp3"');
             return fs.createReadStream(cacheHit.filePath).pipe(res);
         }
-        const ytdlp = spawn(ytdlpPath, [
-            '--cookies', cookiesPath,
+        const ytdlpArgs = [
             '-o', '-', // output to stdout
             '-f', 'bestaudio[ext=mp3]/bestaudio/best', // best audio only, prefer mp3
             '--quiet',
@@ -191,7 +207,9 @@ class DownloaderController {
             '--audio-format', 'mp3',
             '--no-playlist',
             videoUrl
-        ]);
+        ];
+        if (cookiesExist) ytdlpArgs.unshift('--cookies', cookiesPath);
+        const ytdlp = spawn(ytdlpPath, ytdlpArgs);
         const chunks = [];
         ytdlp.stdout.on('data', (chunk) => {
             chunks.push(chunk);
@@ -221,8 +239,11 @@ class DownloaderController {
         });
         let hasError = false;
 
+        let stderrBuf = '';
         ytdlp.stderr.on('data', (data) => {
-            console.error(`yt-dlp error: ${data}`);
+            const s = data.toString();
+            stderrBuf += s;
+            console.error(`yt-dlp stderr: ${s}`);
             hasError = true;
         });
 
@@ -240,7 +261,13 @@ class DownloaderController {
             if (!hasError) {
                 ytdlp.stdout.pipe(res);
             } else if (!res.headersSent) {
-                res.status(500).json({ error: 'yt-dlp failed to download video.' });
+                // cookie/auth checks
+                const stderrLower = stderrBuf.toLowerCase();
+                if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
+                    const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                    return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
+                }
+                res.status(500).json({ error: 'yt-dlp failed to download audio.', details: stderrBuf.slice(0, 2000) });
             }
         });
     }
@@ -251,25 +278,30 @@ class DownloaderController {
             return res.status(400).json({ error: 'Missing YouTube Shorts URL.' });
         }
 
-        const ytdlpPath = this.getYtDlpPath();
-        const cookiesPath = path.join(__dirname, '../../cookies.txt');
+    const ytdlpPath = this.getYtDlpPath();
+    const cookiesPath = path.join(__dirname, '../../cookies.txt');
+    const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
 
-        res.header('Content-Disposition', 'attachment; filename="shorts.mp4"');
+    res.header('Content-Disposition', 'attachment; filename="shorts.mp4"');
         console.log('Download started for:', videoUrl);
-        const ytdlp = spawn(ytdlpPath, [
-            '--cookies', cookiesPath,
+        const ytdlpArgs = [
             '-o', '-', // output to stdout
             '-f', 'best[ext=mp4]/best', // download the best single MP4 format
             '--quiet',
             '--no-playlist',
             videoUrl
-        ]);
+        ];
+        if (cookiesExist) ytdlpArgs.unshift('--cookies', cookiesPath);
+
+        const ytdlp = spawn(ytdlpPath, ytdlpArgs);
+        let stderrBuf = '';
+        ytdlp.stderr.on('data', (data) => {
+            const s = data.toString();
+            stderrBuf += s;
+            console.error(`yt-dlp stderr: ${s}`);
+        });
 
         ytdlp.stdout.pipe(res);
-
-        ytdlp.stderr.on('data', (data) => {
-            console.error(`yt-dlp error: ${data}`);
-        });
 
         ytdlp.on('error', (err) => {
             console.error(err);
@@ -279,8 +311,15 @@ class DownloaderController {
         });
 
         ytdlp.on('close', (code) => {
+            const stderrLower = stderrBuf.toLowerCase();
+            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
+                if (!res.headersSent) {
+                    const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                    return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
+                }
+            }
             if (code !== 0 && !res.headersSent) {
-                res.status(500).json({ error: 'yt-dlp failed to download Shorts video.' });
+                res.status(500).json({ error: 'yt-dlp failed to download Shorts video.', details: stderrBuf.slice(0,2000) });
             }
         });
     }
@@ -315,9 +354,10 @@ class DownloaderController {
         }
         const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-        const ytdlpPath = this.getYtDlpPath();
-        const cookiesPath = path.join(__dirname, '../../cookies.txt');
-        // Check cache first
+    const ytdlpPath = this.getYtDlpPath();
+    const cookiesPath = path.join(__dirname, '../../cookies.txt');
+    const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
+    // Check cache first
         const cacheHit = await Cache.findOne({ videoId, type: 'info' });
         if (cacheHit && cacheHit.info) {
             const info = cacheHit.info;
@@ -340,18 +380,19 @@ class DownloaderController {
             });
         }
         try {
-            const ytdlp = spawn(ytdlpPath, [
-                '--cookies', cookiesPath,
-                '-j', // JSON output
-                cleanUrl
-            ]);
+            const infoArgs = ['-j', cleanUrl];
+            if (cookiesExist) infoArgs.unshift('--cookies', cookiesPath);
+            const ytdlp = spawn(ytdlpPath, infoArgs);
             let json = '';
             ytdlp.stdout.on('data', (data) => {
                 json += data.toString();
                 console.log('yt-dlp stdout:', data.toString());
             });
+            let stderrBuf = '';
             ytdlp.stderr.on('data', (data) => {
-                console.error('yt-dlp stderr:', data.toString());
+                const s = data.toString();
+                stderrBuf += s;
+                console.error('yt-dlp stderr:', s);
             });
             ytdlp.on('error', (err) => {
                 console.error('yt-dlp process error:', err);
@@ -370,6 +411,12 @@ class DownloaderController {
                 clearTimeout(timeout);
                 if (code !== 0) {
                     console.error(`yt-dlp exited with code ${code}`);
+                    // Inspect stderr for cookie/auth problems
+                    const sl = stderrBuf.toLowerCase();
+                    if (sl.includes('cookies are no longer valid') || sl.includes('sign in to confirm') || sl.includes('use --cookies')) {
+                        const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                        return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
+                    }
                     return res.status(500).json({ error: 'yt-dlp failed to fetch video info.' });
                 }
                 try {
