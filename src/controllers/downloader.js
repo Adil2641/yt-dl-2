@@ -3,32 +3,15 @@ const path = require('path');
 const ytdl = require('ytdl-core');
 const Cache = require('../models/cache');
 const fs = require('fs');
+const config = require('../config');
 
 const CACHE_DIR = path.join(__dirname, '../../cache');
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR);
 
 class DownloaderController {
-    // Use correct yt-dlp binary for platform
+    // Delegate to centralized config for yt-dlp path handling
     getYtDlpPath() {
-        // Check if we're in Render's environment
-        const isRender = process.env.RENDER === 'true';
-        
-        // Get the appropriate path based on platform
-        const ytdlpPath = process.platform === 'win32' 
-            ? path.join(__dirname, '../../yt-dlp.exe')
-            : path.join(__dirname, '../../yt-dlp');
-        
-        // Set executable permissions if we're on Render or Unix
-        if (process.platform !== 'win32' || isRender) {
-            try {
-                fs.chmodSync(ytdlpPath, 0o755); // Use octal notation for permissions
-                console.log('Set executable permissions for yt-dlp');
-            } catch (error) {
-                console.error('Error setting yt-dlp permissions:', error);
-            }
-        }
-        
-        return ytdlpPath;
+        return config.getYtDlpPath();
     }
 
     async downloadVideo(req, res) {
