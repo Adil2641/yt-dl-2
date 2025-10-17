@@ -48,4 +48,35 @@ config.getYtDlpPath = function() {
     return p;
 };
 
+// If YT_COOKIES is provided as an environment variable (useful for Render secrets), write it to the configured cookies path
+try {
+    const cookiesEnv = process.env.YT_COOKIES;
+    if (cookiesEnv && cookiesEnv.trim().length > 0) {
+        const cookiesPath = path.resolve(config.paths.cookies || './cookies.txt');
+        fs.writeFileSync(cookiesPath, cookiesEnv, { encoding: 'utf8' });
+        try { if (process.platform !== 'win32') fs.chmodSync(cookiesPath, 0o600); } catch (e) {}
+        // eslint-disable-next-line no-console
+        console.log('Wrote cookies from YT_COOKIES to', cookiesPath);
+    }
+} catch (err) {
+    // eslint-disable-next-line no-console
+    console.log('Failed to write YT_COOKIES to file:', err && err.message ? err.message : err);
+}
+
+// Log cookies file status for easier debugging on deploy platforms (Render)
+try {
+    const cookiesPath = path.resolve(config.paths.cookies || './cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+        const size = fs.statSync(cookiesPath).size;
+        // eslint-disable-next-line no-console
+        console.log(`Cookies file present at ${cookiesPath} (size=${size} bytes)`);
+    } else {
+        // eslint-disable-next-line no-console
+        console.log(`Cookies file not found at ${cookiesPath}`);
+    }
+} catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('Error checking cookies file:', e && e.message ? e.message : e);
+}
+
 module.exports = config;
