@@ -122,15 +122,31 @@ class DownloaderController {
         const fileStream = fs.createWriteStream(filePath);
         ytdlp.stdout.pipe(fileStream);
         ytdlp.on('close', async (code) => {
+            clearTimeout(timeout);
+            if (responded) return;
+            responded = true;
             if (code === 0) {
                 await Cache.findOneAndUpdate(
                     { videoId, type: 'video', quality },
                     { $set: { filePath, contentType: 'video/mp4', createdAt: new Date() } },
                     { upsert: true }
                 );
+                if (fs.existsSync(filePath)) {
+                    res.setHeader('Content-Type', 'video/mp4');
+                    res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
+                    return fs.createReadStream(filePath).pipe(res);
+                } else {
+                    return res.status(500).json({ error: 'File not found after download.' });
+                }
             }
+            // If yt-dlp reported cookie/auth problems, return actionable 403/400
+            const stderrLower = stderrBuf.toLowerCase();
+            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies') ) {
+                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
+            }
+            return res.status(500).json({ error: 'yt-dlp failed to download video.', details: stderrBuf.slice(0, 2000) });
         });
-        ytdlp.stdout.pipe(res);
         // Collect stderr to inspect yt-dlp warnings/errors (useful on Render)
         let stderrBuf = '';
         ytdlp.stderr.on('data', (data) => {
@@ -153,22 +169,7 @@ class DownloaderController {
                 ytdlp.kill('SIGKILL');
             }
         }, 30000);
-        ytdlp.on('close', (code) => {
-            clearTimeout(timeout);
-            if (responded) return;
-            responded = true;
-            if (totalSize > 0) process.stdout.write('\n');
-            console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
-            // If yt-dlp reported cookie/auth problems, return actionable 403/400
-            const stderrLower = stderrBuf.toLowerCase();
-            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies') ) {
-                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-            }
-            if (code !== 0) {
-                res.status(500).json({ error: 'yt-dlp failed to download video.', details: stderrBuf.slice(0, 2000) });
-            }
-        });
+        // (Removed duplicate on('close') handler)
     }
 
     async downloadAudio(req, res) {
@@ -240,13 +241,29 @@ class DownloaderController {
         const fileStream = fs.createWriteStream(filePath);
         ytdlp.stdout.pipe(fileStream);
         ytdlp.on('close', async (code) => {
+            clearTimeout(timeout);
+            if (responded) return;
+            responded = true;
             if (code === 0 && videoId) {
                 await Cache.findOneAndUpdate(
                     { videoId, type: 'audio', quality: 'mp3' },
                     { $set: { filePath, contentType: 'audio/mp3', createdAt: new Date() } },
                     { upsert: true }
                 );
+                if (fs.existsSync(filePath)) {
+                    res.setHeader('Content-Type', 'audio/mp3');
+                    res.setHeader('Content-Disposition', 'attachment; filename="audio.mp3"');
+                    return fs.createReadStream(filePath).pipe(res);
+                } else {
+                    return res.status(500).json({ error: 'File not found after download.' });
+                }
             }
+            const stderrLower = stderrBuf.toLowerCase();
+            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
+                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
+                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
+            }
+            return res.status(500).json({ error: 'yt-dlp failed to download audio.', details: stderrBuf.slice(0, 2000) });
         });
         let responded = false;
         let stderrBuf = '';
@@ -270,21 +287,7 @@ class DownloaderController {
                 ytdlp.kill('SIGKILL');
             }
         }, 30000);
-        ytdlp.on('close', (code) => {
-            clearTimeout(timeout);
-            if (responded) return;
-            responded = true;
-            if (totalSize > 0) process.stdout.write('\n');
-            console.log(`\n--- Video download process finished for: ${videoUrl} ---`);
-            const stderrLower = stderrBuf.toLowerCase();
-            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
-                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-            }
-            if (code !== 0) {
-                res.status(500).json({ error: 'yt-dlp failed to download audio.', details: stderrBuf.slice(0, 2000) });
-            }
-        });
+        // (Removed duplicate on('close') handler)
     }
 
     async downloadShorts(req, res) {
@@ -317,7 +320,7 @@ class DownloaderController {
             console.error(`yt-dlp stderr: ${s}`);
         });
 
-        ytdlp.stdout.pipe(res);
+    // Remove direct piping to res for shorts as well; implement after download logic if needed
 
         ytdlp.on('error', (err) => {
             console.error(err);
