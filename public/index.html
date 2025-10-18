@@ -945,12 +945,23 @@
                         <span><i class="fas fa-eye"></i> ${formatNumber(videoViews)} views</span>
                     `;
                     videoInfoDiv.style.display = 'flex';
-                    // Show only available qualities (no null itag, ext, or qualityLabel)
+                    // Show only qualities with both video and audio (muxed)
                     const qualityOptions = document.getElementById('qualityOptions');
                     qualityOptions.innerHTML = '';
                     let first = true;
-                    (data.formats || []).filter(q => q.hasAudio && q.hasVideo).forEach(q => {
-                        let label = q.qualityLabel || q.resolution || q.itag;
+                    const muxedFormats = (data.formats || []).filter(q => q.hasAudio && q.hasVideo);
+                    muxedFormats.forEach(q => {
+                        // Build a clear label: e.g. "1280x720 mp4 (itag 95)" or "360p 640x360 mp4 (7.05 MB)"
+                        let label = '';
+                        if (q.qualityLabel) {
+                            label += q.qualityLabel + ' ';
+                        }
+                        if (q.resolution) {
+                            label += q.resolution + ' ';
+                        }
+                        label += q.ext ? q.ext.toUpperCase() : '';
+                        label = label.trim();
+                        label += ` (itag ${q.itag})`;
                         if (q.filesize) {
                             label += ` (${(q.filesize / 1048576).toFixed(2)} MB)`;
                         }
@@ -962,10 +973,10 @@
                         qualityOptions.appendChild(btn);
                         if (first) { selectedQuality = q.itag; first = false; }
                     });
-                    if (!qualityOptions.hasChildNodes()) {
+                    if (muxedFormats.length === 0) {
                         const btn = document.createElement('button');
                         btn.className = 'quality-btn active';
-                        btn.textContent = 'No valid audio+video qualities available';
+                        btn.textContent = 'No video+audio qualities available';
                         btn.disabled = true;
                         qualityOptions.appendChild(btn);
                         selectedQuality = 'best';
