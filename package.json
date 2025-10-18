@@ -5,7 +5,7 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-  "postinstall": "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp && if [ -f yt-dlp ]; then chmod +x yt-dlp || true; fi"
+  "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
     "dotenv": "^16.5.0",
