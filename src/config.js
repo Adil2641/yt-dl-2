@@ -48,22 +48,24 @@ config.getYtDlpPath = function() {
     return p;
 };
 
-// If YT_COOKIES is provided as an environment variable (useful for Render secrets), write it to the configured cookies path
+// If YT_COOKIES is provided as an environment variable (useful for Render secrets or Windows), write it to the configured cookies path
 try {
     const cookiesEnv = process.env.YT_COOKIES;
+    const cookiesPath = path.resolve(config.paths.cookies || './cookies.txt');
     if (cookiesEnv && cookiesEnv.trim().length > 0) {
-        const cookiesPath = path.resolve(config.paths.cookies || './cookies.txt');
         fs.writeFileSync(cookiesPath, cookiesEnv, { encoding: 'utf8' });
+        // On Linux, set restrictive permissions; on Windows, skip
         try { if (process.platform !== 'win32') fs.chmodSync(cookiesPath, 0o600); } catch (e) {}
         // eslint-disable-next-line no-console
-        console.log('Wrote cookies from YT_COOKIES to', cookiesPath);
+        const size = fs.statSync(cookiesPath).size;
+        console.log(`Wrote cookies from YT_COOKIES to ${cookiesPath} (size=${size} bytes)`);
     }
 } catch (err) {
     // eslint-disable-next-line no-console
     console.log('Failed to write YT_COOKIES to file:', err && err.message ? err.message : err);
 }
 
-// Log cookies file status for easier debugging on deploy platforms (Render)
+// Log cookies file status for easier debugging on all platforms
 try {
     const cookiesPath = path.resolve(config.paths.cookies || './cookies.txt');
     if (fs.existsSync(cookiesPath)) {
