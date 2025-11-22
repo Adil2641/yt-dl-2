@@ -8,11 +8,7 @@
   "paths": {
     "public": "./public",
     "cacheDir": "./cache",
-    "cookies": "./cookies.txt",
-    "ytDlp": {
-      "defaultUnix": "./yt-dlp",
-      "defaultWin": "./yt-dlp.exe"
-    }
+  "cookies": "./cookies.txt"
   },
   "ytDlp": {
     "concurrentFragments": 8,

@@ -1,17 +1,17 @@
 {
   "name": "youtube-downloader-api",
   "version": "1.0.0",
-  "description": "A simple API to download YouTube videos using ytdl-core.",
+  "description": "A simple API to download YouTube videos using @vreden/youtube_scraper.",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
-  "postinstall": "node scripts/postinstall.js"
+    "start": "node src/app.js"
   },
   "dependencies": {
     "dotenv": "^16.5.0",
     "express": "^4.17.1",
     "mongoose": "^8.15.0",
-    "ytdl-core": "^4.11.5"
+    "ytdl-core": "^4.11.5",
+    "@vreden/youtube_scraper": "1.2.8"
   },
   "author": "",
   "license": "ISC"

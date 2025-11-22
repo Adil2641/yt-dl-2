@@ -1,28 +1,28 @@
-const { spawn } = require('child_process');
 const path = require('path');
-const ytdl = require('ytdl-core');
 const Cache = require('../models/cache');
 const fs = require('fs');
 const config = require('../config');
+const Scraper = require('../lib/scraper');
 
 const CACHE_DIR = path.join(__dirname, '../../cache');
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR);
 
 class DownloaderController {
-    // Delegate to centralized config for yt-dlp path handling
-    getYtDlpPath() {
-        return config.getYtDlpPath();
-    }
 
     async downloadVideo(req, res) {
         let responded = false;
         const videoUrl = req.query.url;
         const quality = req.query.quality || 'best';
+        console.log('Starting video download:', {
+            url: videoUrl,
+            quality: quality,
+            timestamp: new Date().toISOString()
+        });
         if (!videoUrl) {
+            console.error('Download failed: Missing URL');
             return res.status(400).json({ error: 'Missing YouTube URL.' });
         }
-    const ytdlpPath = this.getYtDlpPath();
-    const cookiesPath = path.join(__dirname, '../../cookies.txt');
+        const cookiesPath = path.join(__dirname, '../../cookies.txt');
     const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
         res.header('Content-Disposition', `attachment; filename="video.mp4"`);
         let totalSize = 0;
@@ -60,18 +60,10 @@ class DownloaderController {
             if (cacheHit && cacheHit.info && Array.isArray(cacheHit.info.formats)) {
                 info = cacheHit.info;
             } else {
-                // Fallback: fetch info from yt-dlp
+                // Fallback: fetch info from our scraper adapter
                 try {
-                    const infoArgs = ['-j', '--no-playlist', cleanUrl];
-                    if (cookiesExist) infoArgs.unshift('--cookies', cookiesPath);
-                    const infoProc = spawn(ytdlpPath, infoArgs);
-                    let infoJson = '';
-                    await new Promise((resolve) => {
-                        infoProc.stdout.on('data', (data) => { infoJson += data.toString(); });
-                        infoProc.on('close', () => { resolve(); });
-                    });
-                    info = JSON.parse(infoJson);
-                } catch (e) {}
+                    info = await Scraper.getInfo(cleanUrl, { cookies: cookiesExist ? cookiesPath : undefined });
+                } catch (e) { /* ignore and continue */ }
             }
             if (info) {
                 const selectedFormat = (info.formats || []).find(f => f.format_id === quality);
@@ -93,39 +85,29 @@ class DownloaderController {
             res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
             return fs.createReadStream(cacheHit.filePath).pipe(res);
         }
-        const ytdlpArgs = [
-            '-o', '-',
-            '-f', formatArg,
-            '--concurrent-fragments', String(config.ytDlp && config.ytDlp.concurrentFragments ? config.ytDlp.concurrentFragments : 8),
-            '--no-playlist',
-            '--quiet',
-            cleanUrl
-        ];
-        if (cookiesExist) ytdlpArgs.unshift('--cookies', cookiesPath);
-        const ytdlp = spawn(ytdlpPath, ytdlpArgs);
-        const chunks = [];
-        ytdlp.stdout.on('data', (chunk) => {
-            chunks.push(chunk);
-            downloaded += chunk.length;
-            if (totalSize > 0) {
-                percent = Math.floor((downloaded / totalSize) * 100);
-                if (percent !== lastPercent) {
-                    process.stdout.write(`\rDownload: ${percent}% (${(downloaded/1048576).toFixed(2)}MB/${(totalSize/1048576).toFixed(2)}MB)`);
-                    lastPercent = percent;
-                }
-            } else {
-                process.stdout.write(`\rDownloaded: ${(downloaded/1048576).toFixed(2)} MB (no total size)`);
+        // Use scraper adapter to stream the selected format
+        try {
+            const filePath = path.join(CACHE_DIR, `${videoId}_${quality}_video.mp4`);
+            const stream = await Scraper.downloadStream(cleanUrl, { format: formatArg, type: 'video', cookies: cookiesExist ? cookiesPath : undefined });
+            if (!stream) {
+                return res.status(500).json({ error: 'Failed to create download stream.' });
             }
-        });
-        // Save to disk and cache after download
-        const filePath = path.join(CACHE_DIR, `${videoId}_${quality}_video.mp4`);
-        const fileStream = fs.createWriteStream(filePath);
-        ytdlp.stdout.pipe(fileStream);
-        ytdlp.on('close', async (code) => {
-            clearTimeout(timeout);
-            if (responded) return;
-            responded = true;
-            if (code === 0) {
+            const fileStream = fs.createWriteStream(filePath);
+            let streamErrored = false;
+            stream.on('error', (err) => { streamErrored = true; console.error('stream error:', err); });
+            stream.pipe(fileStream);
+            // Timeout handling
+            let finished = false;
+            const timeout = setTimeout(() => {
+                if (!finished && !res.headersSent) {
+                    console.error('Timeout: download took too long.');
+                    stream.destroy && stream.destroy();
+                }
+            }, 30000);
+            fileStream.on('finish', async () => {
+                finished = true;
+                clearTimeout(timeout);
+                if (streamErrored) return res.status(500).json({ error: 'Stream failed during download.' });
                 await Cache.findOneAndUpdate(
                     { videoId, type: 'video', quality },
                     { $set: { filePath, contentType: 'video/mp4', createdAt: new Date() } },
@@ -138,38 +120,28 @@ class DownloaderController {
                 } else {
                     return res.status(500).json({ error: 'File not found after download.' });
                 }
-            }
-            // If yt-dlp reported cookie/auth problems, return actionable 403/400
-            const stderrLower = stderrBuf.toLowerCase();
-            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies') ) {
-                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-            }
-            return res.status(500).json({ error: 'yt-dlp failed to download video.', details: stderrBuf.slice(0, 2000) });
-        });
-        // Collect stderr to inspect yt-dlp warnings/errors (useful on Render)
-        let stderrBuf = '';
-        ytdlp.stderr.on('data', (data) => {
-            const s = data.toString();
-            stderrBuf += s;
-            console.error(`yt-dlp stderr: ${s}`);
-        });
-        ytdlp.on('error', (err) => {
-            console.error(err);
-            if (!responded && !res.headersSent) {
-                responded = true;
-                res.status(500).json({ error: 'Failed to start yt-dlp.' });
-            }
-        });
-        let timeout = setTimeout(() => {
-            if (!responded && !res.headersSent) {
-                responded = true;
-                console.error('Timeout: yt-dlp took too long to respond.');
-                res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
-                ytdlp.kill('SIGKILL');
-            }
-        }, 30000);
-        // (Removed duplicate on('close') handler)
+            });
+            fileStream.on('error', (err) => {
+                clearTimeout(timeout);
+                console.error('file write error:', err);
+            });
+        } catch (err) {
+            console.error('Video download error:', {
+                error: err.message,
+                stack: err.stack,
+                url: videoUrl,
+                quality: quality,
+                timestamp: new Date().toISOString(),
+                errorType: err.name,
+                errorCode: err.code
+            });
+            return res.status(500).json({ 
+                error: 'Failed to download video.', 
+                details: err.message,
+                errorType: err.name,
+                errorCode: err.code
+            });
+        }
     }
 
     async downloadAudio(req, res) {
@@ -178,17 +150,12 @@ class DownloaderController {
             return res.status(400).json({ error: 'Missing YouTube URL.' });
         }
 
-    const ytdlpPath = this.getYtDlpPath();
     const cookiesPath = path.join(__dirname, '../../cookies.txt');
     const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
     res.header('Content-Disposition', 'attachment; filename="audio.mp3"');
-        console.log('Download started for:', videoUrl);
+        console.log('Audio download started for:', videoUrl);
         // Extract videoId for cache
         let videoId = null;
-        let downloaded = 0;
-        let totalSize = 0;
-        let percent = 0;
-        let lastPercent = -1;
         try {
             if (/^[a-zA-Z0-9_-]{11}$/.test(videoUrl)) {
                 videoId = videoUrl;
@@ -211,40 +178,26 @@ class DownloaderController {
             res.setHeader('Content-Disposition', 'attachment; filename="audio.mp3"');
             return fs.createReadStream(cacheHit.filePath).pipe(res);
         }
-        const ytdlpArgs = [
-            '-o', '-', // output to stdout
-            '-f', 'bestaudio[ext=mp3]/bestaudio/best', // best audio only, prefer mp3
-            '--quiet',
-            '--extract-audio',
-            '--audio-format', 'mp3',
-            '--no-playlist',
-            videoUrl
-        ];
-        if (cookiesExist) ytdlpArgs.unshift('--cookies', cookiesPath);
-        const ytdlp = spawn(ytdlpPath, ytdlpArgs);
-        const chunks = [];
-        ytdlp.stdout.on('data', (chunk) => {
-            chunks.push(chunk);
-            downloaded += chunk.length;
-            if (totalSize > 0) {
-                percent = Math.floor((downloaded / totalSize) * 100);
-                if (percent !== lastPercent) {
-                    process.stdout.write(`\rAudio Download: ${percent}% (${(downloaded/1048576).toFixed(2)}MB/${(totalSize/1048576).toFixed(2)}MB)`);
-                    lastPercent = percent;
+        // Use scraper adapter to download audio. We pass requested audio format (mp3) as hint.
+        try {
+            const filePath = path.join(CACHE_DIR, `${videoId || 'unknown'}_mp3_audio.mp3`);
+            const stream = await Scraper.downloadStream(videoUrl, { format: 'bestaudio', type: 'audio', audioFormat: 'mp3', cookies: cookiesExist ? cookiesPath : undefined });
+            if (!stream) return res.status(500).json({ error: 'Failed to create audio stream.' });
+            const fileStream = fs.createWriteStream(filePath);
+            let streamErrored = false;
+            stream.on('error', (err) => { streamErrored = true; console.error('audio stream error:', err); });
+            stream.pipe(fileStream);
+            let finished = false;
+            const timeout = setTimeout(() => {
+                if (!finished && !res.headersSent) {
+                    console.error('Timeout: audio download took too long.');
+                    stream.destroy && stream.destroy();
                 }
-            } else {
-                process.stdout.write(`\rAudio Downloaded: ${(downloaded/1048576).toFixed(2)} MB (no total size)`);
-            }
-        });
-        // Save to disk and cache after download
-        const filePath = path.join(CACHE_DIR, `${videoId}_mp3_audio.mp3`);
-        const fileStream = fs.createWriteStream(filePath);
-        ytdlp.stdout.pipe(fileStream);
-        ytdlp.on('close', async (code) => {
-            clearTimeout(timeout);
-            if (responded) return;
-            responded = true;
-            if (code === 0 && videoId) {
+            }, 30000);
+            fileStream.on('finish', async () => {
+                finished = true;
+                clearTimeout(timeout);
+                if (streamErrored) return res.status(500).json({ error: 'Stream failed during audio download.' });
                 await Cache.findOneAndUpdate(
                     { videoId, type: 'audio', quality: 'mp3' },
                     { $set: { filePath, contentType: 'audio/mp3', createdAt: new Date() } },
@@ -257,37 +210,15 @@ class DownloaderController {
                 } else {
                     return res.status(500).json({ error: 'File not found after download.' });
                 }
-            }
-            const stderrLower = stderrBuf.toLowerCase();
-            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
-                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-            }
-            return res.status(500).json({ error: 'yt-dlp failed to download audio.', details: stderrBuf.slice(0, 2000) });
-        });
-        let responded = false;
-        let stderrBuf = '';
-        ytdlp.stderr.on('data', (data) => {
-            const s = data.toString();
-            stderrBuf += s;
-            console.error(`yt-dlp stderr: ${s}`);
-        });
-        ytdlp.on('error', (err) => {
-            console.error(err);
-            if (!responded && !res.headersSent) {
-                responded = true;
-                res.status(500).json({ error: 'Failed to start yt-dlp.' });
-            }
-        });
-        let timeout = setTimeout(() => {
-            if (!responded && !res.headersSent) {
-                responded = true;
-                console.error('Timeout: yt-dlp took too long to respond.');
-                res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
-                ytdlp.kill('SIGKILL');
-            }
-        }, 30000);
-        // (Removed duplicate on('close') handler)
+            });
+            fileStream.on('error', (err) => {
+                clearTimeout(timeout);
+                console.error('audio file write error:', err);
+            });
+        } catch (err) {
+            console.error('downloadAudio error:', err);
+            return res.status(500).json({ error: 'Failed to download audio.', details: err.message });
+        }
     }
 
     async downloadShorts(req, res) {
@@ -296,66 +227,51 @@ class DownloaderController {
             return res.status(400).json({ error: 'Missing YouTube Shorts URL.' });
         }
 
-    const ytdlpPath = this.getYtDlpPath();
     const cookiesPath = path.join(__dirname, '../../cookies.txt');
     const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
-
     res.header('Content-Disposition', 'attachment; filename="shorts.mp4"');
-        console.log('Download started for:', videoUrl);
-        const ytdlpArgs = [
-            '-o', '-', // output to stdout
-            '-f', 'best[ext=mp4]/best', // download the best single MP4 format
-            '--quiet',
-            '--no-playlist',
-            videoUrl
-        ];
-        if (cookiesExist) ytdlpArgs.unshift('--cookies', cookiesPath);
-
-        const ytdlp = spawn(ytdlpPath, ytdlpArgs);
-        let responded = false;
-        let stderrBuf = '';
-        ytdlp.stderr.on('data', (data) => {
-            const s = data.toString();
-            stderrBuf += s;
-            console.error(`yt-dlp stderr: ${s}`);
-        });
-
-    // Remove direct piping to res for shorts as well; implement after download logic if needed
-
-        ytdlp.on('error', (err) => {
-            console.error(err);
-            if (!responded && !res.headersSent) {
-                responded = true;
-                res.status(500).json({ error: 'Failed to start yt-dlp.' });
-            }
-        });
-        let timeout = setTimeout(() => {
-            if (!responded && !res.headersSent) {
-                responded = true;
-                console.error('Timeout: yt-dlp took too long to respond.');
-                res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
-                ytdlp.kill('SIGKILL');
-            }
-        }, 30000);
-        ytdlp.on('close', (code) => {
-            clearTimeout(timeout);
-            if (responded) return;
-            responded = true;
-            const stderrLower = stderrBuf.toLowerCase();
-            if (stderrLower.includes('cookies are no longer valid') || stderrLower.includes('sign in to confirm') || stderrLower.includes('use --cookies')) {
-                const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-            }
-            if (code !== 0) {
-                res.status(500).json({ error: 'yt-dlp failed to download Shorts video.', details: stderrBuf.slice(0,2000) });
-            }
-        });
+        console.log('Shorts download started for:', videoUrl);
+        try {
+            const filePath = path.join(CACHE_DIR, `shorts_${Date.now()}.mp4`);
+            const stream = await Scraper.downloadStream(videoUrl, { format: 'best[ext=mp4]/best', type: 'video', cookies: cookiesExist ? cookiesPath : undefined });
+            if (!stream) return res.status(500).json({ error: 'Failed to create shorts stream.' });
+            const fileStream = fs.createWriteStream(filePath);
+            let streamErrored = false;
+            stream.on('error', (err) => { streamErrored = true; console.error('shorts stream error:', err); });
+            stream.pipe(fileStream);
+            const timeout = setTimeout(() => {
+                if (!streamErrored && !res.headersSent) {
+                    console.error('Timeout: shorts download took too long.');
+                    stream.destroy && stream.destroy();
+                }
+            }, 30000);
+            fileStream.on('finish', () => {
+                clearTimeout(timeout);
+                if (streamErrored) return res.status(500).json({ error: 'Shorts stream failed during download.' });
+                if (fs.existsSync(filePath)) {
+                    res.setHeader('Content-Type', 'video/mp4');
+                    res.setHeader('Content-Disposition', 'attachment; filename="shorts.mp4"');
+                    return fs.createReadStream(filePath).pipe(res);
+                }
+                return res.status(500).json({ error: 'File not found after shorts download.' });
+            });
+            fileStream.on('error', (err) => { console.error('shorts file write error:', err); });
+        } catch (err) {
+            console.error('downloadShorts error:', err);
+            return res.status(500).json({ error: 'Failed to download shorts.', details: err.message });
+        }
     }
 
     async getVideoInfo(req, res) {
         const videoUrl = req.query.url;
+        console.log('Video info request received:', {
+            url: videoUrl,
+            timestamp: new Date().toISOString(),
+            userAgent: req.headers['user-agent'],
+            ip: req.ip
+        });
         if (!videoUrl) {
-            console.error('Missing YouTube URL.');
+            console.error('Info request failed: Missing URL');
             return res.status(400).json({ error: 'Missing YouTube URL.' });
         }
 
@@ -382,7 +298,6 @@ class DownloaderController {
         }
         const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-    const ytdlpPath = this.getYtDlpPath();
     const cookiesPath = path.join(__dirname, '../../cookies.txt');
     const cookiesExist = fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0;
     // Check cache first
@@ -408,94 +323,43 @@ class DownloaderController {
             });
         }
         try {
-            let responded = false;
-            const infoArgs = ['-j', cleanUrl];
-            if (cookiesExist) infoArgs.unshift('--cookies', cookiesPath);
-            const ytdlp = spawn(ytdlpPath, infoArgs);
-            let json = '';
-            ytdlp.stdout.on('data', (data) => {
-                json += data.toString();
-                console.log('yt-dlp stdout:', data.toString());
-            });
-            let stderrBuf = '';
-            ytdlp.stderr.on('data', (data) => {
-                const s = data.toString();
-                stderrBuf += s;
-                console.error('yt-dlp stderr:', s);
-            });
-            ytdlp.on('error', (err) => {
-                console.error('yt-dlp process error:', err);
-                if (!responded && !res.headersSent) {
-                    responded = true;
-                    res.status(500).json({ error: 'Failed to fetch video info.' });
-                }
-            });
-            let timeout = setTimeout(() => {
-                if (!responded && !res.headersSent) {
-                    responded = true;
-                    console.error('Timeout: yt-dlp took too long to respond.');
-                    res.status(504).json({ error: 'Timeout: yt-dlp took too long to respond. Please check your URL or try again later.' });
-                    ytdlp.kill('SIGKILL');
-                }
-            }, 30000); // 30 seconds timeout
-            ytdlp.on('close', async (code) => {
-                clearTimeout(timeout);
-                if (responded) return;
-                responded = true;
-                if (code !== 0) {
-                    console.error(`yt-dlp exited with code ${code}`);
-                    // Inspect stderr for cookie/auth problems
-                    const sl = stderrBuf.toLowerCase();
-                    if (sl.includes('cookies are no longer valid') || sl.includes('sign in to confirm') || sl.includes('use --cookies')) {
-                        const existsText = cookiesExist ? 'cookies file exists but may be invalid or expired.' : 'no cookies file found.';
-                        return res.status(403).json({ error: 'yt-dlp authentication/cookie error', details: `yt-dlp stderr: ${stderrBuf.replace(/\n/g,' ')}. ${existsText}` });
-                    }
-                    return res.status(500).json({ error: 'yt-dlp failed to fetch video info.' });
-                }
-                try {
-                    const info = JSON.parse(json);
-                    // Log all available formats for debugging
-                    if (info.formats) {
-                        console.log('Available formats:', info.formats.map(f => ({
-                            format_id: f.format_id,
-                            ext: f.ext,
-                            vcodec: f.vcodec,
-                            acodec: f.acodec,
-                            resolution: f.resolution,
-                            format_note: f.format_note,
-                            filesize: f.filesize || f.filesize_approx || null
-                        })));
-                    }
-                    await Cache.findOneAndUpdate(
-                        { videoId, type: 'info' },
-                        { $set: { info, createdAt: new Date() } },
-                        { upsert: true }
-                    );
-                    return res.json({
-                        title: info.title,
-                        description: info.description,
-                        duration: info.duration,
-                        views: info.view_count, // <-- add this alias for frontend
-                        view_count: info.view_count, // keep for admin
-                        thumbnail: (info.thumbnails && info.thumbnails.length > 0) ? info.thumbnails[info.thumbnails.length - 1].url : '',
-                        formats: (info.formats || []).map(f => ({
-                            itag: f.format_id,
-                            ext: f.ext,
-                            resolution: f.resolution || '',
-                            qualityLabel: f.quality_label || f.format_note || '',
-                            filesize: f.filesize || f.filesize_approx || null,
-                            hasAudio: f.acodec !== 'none',
-                            hasVideo: f.vcodec !== 'none'
-                        }))
-                    });
-                } catch (err) {
-                    console.error('yt-dlp parse error:', err, '\nRaw output:', json);
-                    res.status(500).json({ error: 'Failed to parse yt-dlp output.' });
-                }
+            const info = await Scraper.getInfo(cleanUrl, { cookies: cookiesExist ? cookiesPath : undefined });
+            if (!info) return res.status(500).json({ error: 'Failed to fetch video info.' });
+            await Cache.findOneAndUpdate(
+                { videoId, type: 'info' },
+                { $set: { info, createdAt: new Date() } },
+                { upsert: true }
+            );
+            return res.json({
+                title: info.title,
+                description: info.description,
+                duration: info.duration,
+                views: info.view_count,
+                view_count: info.view_count,
+                thumbnail: (info.thumbnails && info.thumbnails.length > 0) ? info.thumbnails[info.thumbnails.length - 1].url : '',
+                formats: (info.formats || []).map(f => ({
+                    itag: f.format_id,
+                    ext: f.ext,
+                    resolution: f.resolution || '',
+                    qualityLabel: f.quality_label || f.format_note || '',
+                    filesize: f.filesize || f.filesize_approx || null,
+                    hasAudio: f.acodec !== 'none',
+                    hasVideo: f.vcodec !== 'none'
+                }))
             });
         } catch (err) {
-            console.error('getVideoInfo error:', err);
-            res.status(500).json({ error: 'Failed to fetch video info.', details: err.message });
+            console.error('Video info fetch error:', {
+                error: err.message,
+                stack: err.stack,
+                url: videoUrl,
+                timestamp: new Date().toISOString()
+            });
+            res.status(500).json({ 
+                error: 'Failed to fetch video info.', 
+                details: err.message,
+                errorType: err.name,
+                errorCode: err.code
+            });
         }
     }
 }

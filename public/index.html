@@ -223,27 +223,115 @@
         }
         
         .quality-selector {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            z-index: 1000;
+            min-width: 300px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .quality-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-color);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 5px;
+        }
+        
+        .quality-list {
             display: flex;
             flex-direction: column;
             gap: 10px;
-            margin-bottom: 15px;
-        }
-        
-        .quality-options {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: center;
         }
         
         .quality-btn {
-            padding: 8px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
             background-color: var(--light-color);
             color: var(--text-color);
-            border-radius: 20px;
-            font-size: 0.9rem;
+            border-radius: 10px;
+            font-size: 1rem;
             border: none;
             cursor: pointer;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+        
+        .quality-btn .quality-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+        
+        .quality-btn .quality-label {
+            font-weight: bold;
+        }
+        
+        .quality-btn .quality-size {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+        
+        .quality-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .quality-category {
+            margin-bottom: 20px;
+        }
+
+        .quality-category h4 {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .quality-details {
+            font-size: 0.85rem;
+            color: var(--text-color);
+            opacity: 0.7;
+        }
+
+        .quality-label {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        /* Modal backdrop */
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+            z-index: 999;
         }
         
         .quality-btn.active {
@@ -260,6 +348,28 @@
         #progress {
             margin: 2rem 0;
             display: none;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+        
+        .progress-header {
+            margin-bottom: 15px;
+        }
+        
+        .progress-header h3 {
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+        
+        .download-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: var(--text-color);
+            opacity: 0.8;
         }
         
         .progress-container {
@@ -268,6 +378,7 @@
             height: 20px;
             margin-bottom: 10px;
             overflow: hidden;
+            position: relative;
         }
         
         .progress-bar {
@@ -276,12 +387,42 @@
             width: 0%;
             transition: width 0.3s ease;
             border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                45deg,
+                rgba(255,255,255,0.2) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(255,255,255,0.2) 50%,
+                rgba(255,255,255,0.2) 75%,
+                transparent 75%,
+                transparent
+            );
+            background-size: 30px 30px;
+            animation: progressStripes 1s linear infinite;
+        }
+        
+        @keyframes progressStripes {
+            0% { background-position: 0 0; }
+            100% { background-position: 30px 0; }
         }
         
         .progress-text {
             text-align: center;
             font-weight: bold;
             color: var(--text-color);
+            margin-top: 10px;
+            font-size: 1.1rem;
         }
         
         #result {
@@ -744,21 +885,43 @@
             <div class="video-info" id="videoInfo" style="display: none;"></div>
             <div class="download-options" id="downloadOptions">
                 <div class="quality-selector">
-                    <h3>Select Quality:</h3>
-                    <div class="quality-options" id="qualityOptions">
-                        <!-- Quality buttons will be generated dynamically -->
+                    <h3>Select Video Quality (for MP4):</h3>
+                    <div class="quality-options" id="videoQualityOptions">
+                        <!-- Video quality buttons will be generated dynamically -->
+                    </div>
+                    <h3 style="margin-top:12px;">Select Audio Quality (for MP3):</h3>
+                    <div class="quality-options" id="audioQualityOptions">
+                        <!-- Audio quality buttons will be generated dynamically -->
                     </div>
                 </div>
                 <div class="action-buttons">
-                    <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
+                    <button id="downloadMp3Btn" class="mp3-btn" onclick="showAudioQualities()">
                         <i class="fas fa-music"></i> Download MP3
                     </button>
-                    <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
+                    <button id="downloadMp4Btn" class="mp4-btn" onclick="showVideoQualities()">
                         <i class="fas fa-video"></i> Download MP4
                     </button>
                 </div>
             </div>
-            <div id="progress">
+            <div id="qualitySelector" class="quality-selector" style="display:none;">
+                <div class="quality-header">
+                    <h3 id="qualitySelectorTitle">Select Quality</h3>
+                    <button class="close-btn" onclick="hideQualitySelector()"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="quality-list" id="qualityList">
+                    <!-- Quality options will be added here dynamically -->
+                </div>
+            </div>
+            <div id="modalBackdrop" class="modal-backdrop"></div>
+            <div id="progress" style="display:none;">
+                <div class="progress-header">
+                    <h3>Downloading...</h3>
+                    <div class="download-info">
+                        <span id="downloadSpeed">Speed: 0 MB/s</span>
+                        <span id="downloadSize">Size: 0 MB / 0 MB</span>
+                        <span id="downloadTime">Time: 00:00</span>
+                    </div>
+                </div>
                 <div class="progress-container">
                     <div class="progress-bar" id="progressBar"></div>
                 </div>
@@ -838,7 +1001,8 @@
         let videoId = '';
         let eventSource = null;
         let currentFormat = '';
-        let selectedQuality = 'best';
+        let selectedVideoQuality = 'best';
+        let selectedAudioQuality = 128;
         let videoDuration = 0;
         let videoViews = 0;
         
@@ -879,11 +1043,154 @@
             });
         });
         
-        function setQuality(btn) {
-            document.querySelectorAll('.quality-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            selectedQuality = btn.dataset.quality;
+        function formatFileSize(bytes) {
+            if (!bytes || isNaN(bytes)) return 'Unknown';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let size = Math.abs(Number(bytes));
+            let unitIndex = 0;
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024;
+                unitIndex++;
+            }
+            // Use 2 decimal places for MB and GB, 0 for B and KB
+            const decimals = unitIndex >= 2 ? 2 : 0;
+            return `${size.toFixed(decimals)} ${units[unitIndex]}`;
         }
+
+        function showVideoQualities() {
+            console.log('Showing video qualities, available formats:', formats);
+            const qualitySelector = document.getElementById('qualitySelector');
+            const qualityList = document.getElementById('qualityList');
+            const title = document.getElementById('qualitySelectorTitle');
+            
+            title.textContent = 'Select Video Quality';
+            qualityList.innerHTML = '';
+
+            // First sort formats by height
+            formats.sort((a, b) => b.height - a.height);
+            
+            // Create quality categories
+            const qualityCategories = {
+                '4K+': formats.filter(f => f.height >= 2160),
+                'Full HD+': formats.filter(f => f.height >= 1080 && f.height < 2160),
+                'HD': formats.filter(f => f.height >= 720 && f.height < 1080),
+                'Standard': formats.filter(f => f.height >= 360 && f.height < 720),
+                'Low': formats.filter(f => f.height < 360)
+            };
+
+            // Helper function to create quality button
+            function createQualityButton(format) {
+                const btn = document.createElement('button');
+                btn.className = 'quality-btn';
+                
+                // Determine resolution label
+                let qualityLabel = format.quality_label || `${format.height}p`;
+                if (format.height >= 2160) qualityLabel = '4K ' + qualityLabel;
+                else if (format.height >= 1440) qualityLabel = 'QHD ' + qualityLabel;
+                else if (format.height >= 1080) qualityLabel = 'Full HD ' + qualityLabel;
+                else if (format.height >= 720) qualityLabel = 'HD ' + qualityLabel;
+                
+                // Add FPS if available
+                const fps = format.fps ? ` ${format.fps}fps` : '';
+                
+                // Format size and codec info
+                const size = format.filesize ? ` • ${formatFileSize(format.filesize)}` : '';
+                const codec = format.vcodec ? ` • ${format.vcodec.split('.')[0]}` : '';
+                
+                // Calculate dimensions if not provided
+                const width = format.width || Math.round(format.height * 16 / 9);
+                const height = format.height;
+                
+                btn.innerHTML = `
+                    <div class="quality-info">
+                        <span class="quality-label">${qualityLabel}${fps}</span>
+                        <span class="quality-details">
+                            ${width}x${height}${codec}${size}
+                        </span>
+                    </div>
+                    <i class="fas fa-download"></i>
+                `;
+                
+                btn.onclick = () => {
+                    console.log('Selected quality:', format);
+                    downloadMedia('mp4', format.format_id);
+                };
+                
+                return btn;
+            }
+
+            // Create category sections
+            Object.entries(qualityCategories).forEach(([category, categoryFormats]) => {
+                console.log(`Processing category ${category}:`, categoryFormats);
+                if (categoryFormats.length > 0) {
+                    const categoryDiv = document.createElement('div');
+                    categoryDiv.className = 'quality-category';
+                    
+                    const categoryHeader = document.createElement('h4');
+                    categoryHeader.textContent = `${category} (${categoryFormats.length})`;
+                    categoryDiv.appendChild(categoryHeader);
+
+                    // Sort formats by height in descending order
+                    categoryFormats
+                        .sort((a, b) => b.height - a.height)
+                        .forEach(format => {
+                            console.log(`Adding format to ${category}:`, format);
+                            categoryDiv.appendChild(createQualityButton(format));
+                        });
+
+                    qualityList.appendChild(categoryDiv);
+                }
+            });
+            
+            // If no qualities were added, show a message
+            if (qualityList.children.length === 0) {
+                const noFormats = document.createElement('div');
+                noFormats.className = 'no-formats-message';
+                noFormats.textContent = 'No video qualities available. Please try a different video.';
+                qualityList.appendChild(noFormats);
+                console.error('No video qualities available:', formats);
+            }
+            
+            qualitySelector.style.display = 'block';
+        }
+        
+        function showAudioQualities() {
+            const qualitySelector = document.getElementById('qualitySelector');
+            const qualityList = document.getElementById('qualityList');
+            const title = document.getElementById('qualitySelectorTitle');
+            
+            title.textContent = 'Select Audio Quality';
+            qualityList.innerHTML = '';
+            
+            audioQualities.forEach(quality => {
+                const btn = document.createElement('button');
+                btn.className = 'quality-btn';
+                btn.innerHTML = `
+                    <div class="quality-info">
+                        <span class="quality-label">${quality} kbps</span>
+                        <span class="quality-size">Audio Only</span>
+                    </div>
+                    <i class="fas fa-music"></i>
+                `;
+                btn.onclick = () => downloadMedia('mp3', quality);
+                qualityList.appendChild(btn);
+            });
+            
+            qualitySelector.style.display = 'block';
+            document.getElementById('modalBackdrop').style.display = 'block';
+        }
+        
+        function hideQualitySelector() {
+            document.getElementById('qualitySelector').style.display = 'none';
+            document.getElementById('modalBackdrop').style.display = 'none';
+        }
+
+        // Close quality selector when clicking outside
+        document.getElementById('modalBackdrop').addEventListener('click', hideQualitySelector);
+        
+        let downloadStartTime = 0;
+        let formats = [];
+        let audioQualities = [];
         
         function formatDuration(seconds) {
             if (!seconds) return '00:00';
@@ -931,6 +1238,61 @@
                     videoTitle = data.title || 'Unknown Title';
                     videoDuration = data.duration || 0;
                     videoViews = data.views || 0;
+                    
+                    // Store formats and ensure they have all required properties
+                    formats = (data.formats || []).map(format => {
+                        // Extract height from quality label if present
+                        let height = format.height;
+                        if (!height && format.quality_label) {
+                            const match = format.quality_label.match(/(\d+)p/);
+                            if (match) height = parseInt(match[1]);
+                        }
+                        if (!height) height = 360; // fallback height
+
+                        // Calculate width if not present
+                        const width = format.width || Math.round(height * 16 / 9);
+
+                        // Create quality label
+                        let qualityLabel;
+                        if (height >= 2160) qualityLabel = '4K 2160p';
+                        else if (height >= 1440) qualityLabel = 'QHD 1440p';
+                        else if (height >= 1080) qualityLabel = 'Full HD 1080p';
+                        else if (height >= 720) qualityLabel = 'HD 720p';
+                        else qualityLabel = `${height}p`;
+
+                        return {
+                            ...format,
+                            height: height,
+                            width: width,
+                            hasVideo: true,
+                            hasAudio: true,
+                            quality_label: qualityLabel,
+                            format_id: format.format_id || String(height),
+                            filesize: format.filesize || format.contentLength || null,
+                            vcodec: format.vcodec || 'avc1',
+                            acodec: format.acodec || 'aac'
+                        };
+                    });
+
+                    // Add common qualities if none are available
+                    if (formats.length === 0) {
+                        [360, 480, 720, 1080].forEach(height => {
+                            formats.push({
+                                format_id: String(height),
+                                height: height,
+                                width: Math.round(height * 16 / 9),
+                                hasVideo: true,
+                                hasAudio: true,
+                                quality_label: `${height}p`,
+                                filesize: null,
+                                vcodec: 'avc1',
+                                acodec: 'aac'
+                            });
+                        });
+                    }
+
+                    audioQualities = data.audioQualities || [128, 192, 320];
+                    console.log('Available formats:', formats);
                     document.getElementById('title').textContent = videoTitle;
                     const thumbnailUrl = data.thumbnail || '';
                     const thumbnailImg = document.getElementById('videoThumbnail');
@@ -945,41 +1307,78 @@
                         <span><i class="fas fa-eye"></i> ${formatNumber(videoViews)} views</span>
                     `;
                     videoInfoDiv.style.display = 'flex';
-                    // Show only qualities with both video and audio (muxed)
-                    const qualityOptions = document.getElementById('qualityOptions');
-                    qualityOptions.innerHTML = '';
-                    let first = true;
-                    const muxedFormats = (data.formats || []).filter(q => q.hasAudio && q.hasVideo);
-                    muxedFormats.forEach(q => {
-                        // Build a clear label: e.g. "1280x720 mp4 (itag 95)" or "360p 640x360 mp4 (7.05 MB)"
-                        let label = '';
-                        if (q.qualityLabel) {
-                            label += q.qualityLabel + ' ';
+                    // Populate video qualities and audio qualities using data from server
+                    const videoOptions = document.getElementById('videoQualityOptions');
+                    const audioOptions = document.getElementById('audioQualityOptions');
+                    videoOptions.innerHTML = '';
+                    audioOptions.innerHTML = '';
+                    // Video qualities (prefer explicit list from API)
+                    if (Array.isArray(data.videoQualities) && data.videoQualities.length) {
+                        let first = true;
+                        data.videoQualities.forEach(q => {
+                            const label = typeof q === 'number' ? `${q}p` : String(q);
+                            const btn = document.createElement('button');
+                            btn.className = 'quality-btn' + (first ? ' active' : '');
+                            btn.textContent = label;
+                            btn.dataset.quality = String(q);
+                            btn.onclick = function() { setVideoQuality(this); };
+                            videoOptions.appendChild(btn);
+                            if (first) { selectedVideoQuality = String(q); first = false; }
+                        });
+                    } else {
+                        // Fallback: derive from muxed formats
+                        const muxedFormats = (data.formats || []).filter(q => q.hasAudio && q.hasVideo);
+                        let first = true;
+                        muxedFormats.forEach(q => {
+                            let label = '';
+                            if (q.qualityLabel) label += q.qualityLabel + ' ';
+                            if (q.resolution) label += q.resolution + ' ';
+                            label += q.ext ? q.ext.toUpperCase() : '';
+                            label = label.trim();
+                            label += ` (itag ${q.itag})`;
+                            const btn = document.createElement('button');
+                            btn.className = 'quality-btn' + (first ? ' active' : '');
+                            btn.textContent = label;
+                            btn.dataset.quality = q.itag;
+                            btn.onclick = function() { setVideoQuality(this); };
+                            videoOptions.appendChild(btn);
+                            if (first) { selectedVideoQuality = q.itag; first = false; }
+                        });
+                        if (muxedFormats.length === 0) {
+                            const btn = document.createElement('button');
+                            btn.className = 'quality-btn active';
+                            btn.textContent = 'No video+audio qualities available';
+                            btn.disabled = true;
+                            videoOptions.appendChild(btn);
+                            selectedVideoQuality = 'best';
                         }
-                        if (q.resolution) {
-                            label += q.resolution + ' ';
-                        }
-                        label += q.ext ? q.ext.toUpperCase() : '';
-                        label = label.trim();
-                        label += ` (itag ${q.itag})`;
-                        if (q.filesize) {
-                            label += ` (${(q.filesize / 1048576).toFixed(2)} MB)`;
-                        }
-                        const btn = document.createElement('button');
-                        btn.className = 'quality-btn' + (first ? ' active' : '');
-                        btn.textContent = label;
-                        btn.dataset.quality = q.itag;
-                        btn.onclick = function() { setQuality(this); };
-                        qualityOptions.appendChild(btn);
-                        if (first) { selectedQuality = q.itag; first = false; }
-                    });
-                    if (muxedFormats.length === 0) {
-                        const btn = document.createElement('button');
-                        btn.className = 'quality-btn active';
-                        btn.textContent = 'No video+audio qualities available';
-                        btn.disabled = true;
-                        qualityOptions.appendChild(btn);
-                        selectedQuality = 'best';
+                    }
+                    // Audio qualities (prefer explicit list from API)
+                    if (Array.isArray(data.audioQualities) && data.audioQualities.length) {
+                        let first = true;
+                        data.audioQualities.forEach(q => {
+                            const label = typeof q === 'number' ? `${q} kbps` : String(q);
+                            const btn = document.createElement('button');
+                            btn.className = 'quality-btn' + (first ? ' active' : '');
+                            btn.textContent = label;
+                            btn.dataset.quality = String(q);
+                            btn.onclick = function() { setAudioQuality(this); };
+                            audioOptions.appendChild(btn);
+                            if (first) { selectedAudioQuality = String(q); first = false; }
+                        });
+                    } else {
+                        // Fallback: common mp3 bitrates
+                        const common = [128, 256, 320];
+                        common.forEach((q, i) => {
+                            const label = `${q} kbps`;
+                            const btn = document.createElement('button');
+                            btn.className = 'quality-btn' + (i === 0 ? ' active' : '');
+                            btn.textContent = label;
+                            btn.dataset.quality = String(q);
+                            btn.onclick = function() { setAudioQuality(this); };
+                            audioOptions.appendChild(btn);
+                            if (i === 0) selectedAudioQuality = String(q);
+                        });
                     }
                     document.getElementById('downloadOptions').classList.add('show');
                     document.getElementById('downloadMp3Btn').disabled = false;
@@ -996,35 +1395,85 @@
                 });
         }
         
-        function downloadMedia(format) {
+        function downloadMedia(format, quality) {
             let url = document.getElementById('videoId').value.trim();
             if (!url) {
                 showResult('Please enter a valid YouTube video URL', 'error');
                 return;
             }
-            const quality = selectedQuality || 'best';
-            const endpoint = format === 'mp3' ? `/api/audio-download?url=${encodeURIComponent(url)}&quality=${quality}` : (url.includes('youtube.com/shorts') || url.includes('youtu.be/shorts') ? `/api/shorts-download?url=${encodeURIComponent(url)}&quality=${quality}` : `/api/video-download?url=${encodeURIComponent(url)}&quality=${quality}`);
+
+            hideQualitySelector();
+            let endpoint = '';
+            if (format === 'mp3') {
+                endpoint = `/api/audio-download?url=${encodeURIComponent(url)}&quality=${quality}`;
+            } else {
+                endpoint = url.includes('youtube.com/shorts') || url.includes('youtu.be/shorts') 
+                    ? `/api/shorts-download?url=${encodeURIComponent(url)}&quality=${quality}` 
+                    : `/api/video-download?url=${encodeURIComponent(url)}&quality=${quality}`;
+            }
             showResult('Preparing download...', 'success');
             document.getElementById('downloadMp3Btn').disabled = true;
             document.getElementById('downloadMp4Btn').disabled = true;
             document.getElementById('progress').style.display = 'block';
+            
             let progressBar = document.getElementById('progressBar');
             let progressText = document.getElementById('progressText');
+            let downloadSpeed = document.getElementById('downloadSpeed');
+            let downloadSize = document.getElementById('downloadSize');
+            let downloadTime = document.getElementById('downloadTime');
+            
             progressBar.style.width = '0%';
             progressText.textContent = '0%';
+            downloadStartTime = Date.now();
+            // Initialize download tracking variables
+            let startTime = Date.now();
+            let lastBytes = 0;
+            let totalSize = 0;
+            
+            // Progress tracking function
+            function updateProgress(receivedBytes, totalBytes) {
+                const currentTime = Date.now();
+                const elapsedTime = (currentTime - startTime) / 1000; // in seconds
+                const speed = receivedBytes / elapsedTime; // bytes per second
+                const percent = totalBytes ? Math.round((receivedBytes / totalBytes) * 100) : 0;
+                
+                // Update progress bar
+                progressBar.style.width = percent + '%';
+                progressText.textContent = percent + '%';
+                
+                // Update download info
+                document.getElementById('downloadSpeed').textContent = 
+                    `Speed: ${formatFileSize(speed)}/s`;
+                document.getElementById('downloadSize').textContent = 
+                    `Size: ${formatFileSize(receivedBytes)} / ${formatFileSize(totalBytes)}`;
+                
+                // Update time
+                const minutes = Math.floor(elapsedTime / 60);
+                const seconds = Math.floor(elapsedTime % 60);
+                document.getElementById('downloadTime').textContent = 
+                    `Time: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+
             let es = null;
-            if (format === 'mp4') {
-                es = new EventSource(`/api/video-download?url=${encodeURIComponent(url)}&quality=${quality}`);
+            if (format === 'mp4' || format === 'mp3') {
+                const apiEndpoint = format === 'mp3' ? 'audio-download' : 'video-download';
+                es = new EventSource(`/api/${apiEndpoint}?url=${encodeURIComponent(url)}&quality=${quality}`);
+                
                 es.onmessage = function(event) {
                     try {
                         const data = JSON.parse(event.data);
-                        if (data.percent !== undefined) {
-                            progressBar.style.width = data.percent + '%';
-                            progressText.textContent = data.percent + '%';
+                        if (data.downloaded !== undefined) {
+                            updateProgress(data.downloaded, data.total || 0);
+                            lastBytes = data.downloaded;
+                            totalSize = data.total || totalSize;
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error('Progress update error:', e);
+                    }
                 };
-                es.onerror = function() {
+                
+                es.onerror = function(err) {
+                    console.error('EventSource error:', err);
                     es.close();
                 };
                 fetch(endpoint)
@@ -1078,9 +1527,18 @@
         }
         
         function resetUI() {
-            document.getElementById('progress').style.display = 'none';
+            const progress = document.getElementById('progress');
+            progress.style.display = 'none';
             document.getElementById('downloadMp3Btn').disabled = false;
             document.getElementById('downloadMp4Btn').disabled = false;
+            
+            // Reset progress elements
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressText').textContent = '0%';
+            document.getElementById('downloadSpeed').textContent = 'Speed: 0 MB/s';
+            document.getElementById('downloadSize').textContent = 'Size: 0 MB / 0 MB';
+            document.getElementById('downloadTime').textContent = 'Time: 00:00';
+            
             if (videoTitle) {
                 document.getElementById('title').textContent = videoTitle;
             }

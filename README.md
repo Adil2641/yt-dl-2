@@ -38,7 +38,7 @@ A modern, full-featured YouTube video and audio downloader built with Node.js, E
 - **Node.js** & **Express**
 - **MongoDB** (via Mongoose)
 - **ytdl-core** (YouTube download)
-- **yt-dlp** (for advanced downloads)
+ - **@vreden/youtube_scraper** (primary scraper; falls back to `ytdl-core`)
 - **HTML/CSS/JS** (frontend in `public/`)
 
 ---
@@ -134,12 +134,6 @@ MIT License — see [LICENSE](./LICENSE) for details.
 
 This project supports a `config.json` file in the repository root to centralize runtime options for development and production. A sample `config.json` is included.
 
-- `app.mode` — controls how the server handles platform specifics for the `yt-dlp` binary. Valid values:
-  - `auto` (default) — detect platform and environment variables (like `RENDER`) to choose binary and permissions.
-  - `window` — assume Windows environment and use `yt-dlp.exe`.
-  - `render` — Run in Render.com-like environment (sets executable permission on Unix binaries).
-  - `docker` — Container-friendly defaults.
+`app.mode` — controls runtime mode (auto, render, docker, etc.).
 
-- `paths` — useful path overrides (public folder, cache directory, cookies file, and yt-dlp binaries).
-
-To change how the app picks the `yt-dlp` binary (for example test a Windows binary on Linux), edit `config.json` or set environment variables where appropriate. The server still respects `process.env` values (like `PORT` and `MONGODB_URI`).
+`paths` — useful path overrides (public folder, cache directory, cookies file).
