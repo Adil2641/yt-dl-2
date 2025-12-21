@@ -18,7 +18,7 @@
     "timeoutMs": 30000
   },
   "cache": {
-    "useMongo": true,
+    "useMongo": false,
     "mongoTtlDays": 30,
     "diskFallback": true
   },
